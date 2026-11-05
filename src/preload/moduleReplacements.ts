@@ -37,6 +37,7 @@ const pluginNames = [
   "intellisense",
   "override-keystroke",
   "quake-pro",
+  "profiler",
 ];
 
 replacements.forEach((r) => {

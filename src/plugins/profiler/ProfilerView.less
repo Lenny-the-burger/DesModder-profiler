@@ -1,0 +1,250 @@
+// Desmos's own graph palette, so the categories feel native.
+@compile: #2d70b3;
+@graph: #388c46;
+@draw: #fa7e19;
+@shader: #6042a6;
+@gpu: #c74440;
+
+// The pillbox popover is a fixed 290px; the rows need a bit more room.
+.dsm-pillbox-popover:has(.dsm-profiler-menu) {
+  width: 380px;
+  max-width: calc(100vw - 80px);
+}
+
+.dsm-profiler-menu {
+  .dsm-profiler-compile {
+    background: @compile;
+  }
+  .dsm-profiler-graph {
+    background: @graph;
+  }
+  .dsm-profiler-draw {
+    background: @draw;
+  }
+  .dsm-profiler-shader {
+    background: @shader;
+  }
+  .dsm-profiler-gpu {
+    background: @gpu;
+  }
+
+  .dsm-profiler-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    .dcg-popover-title {
+      flex: 1;
+    }
+  }
+
+  .dsm-profiler-controls {
+    margin: 7px 0 4px;
+  }
+
+  .dsm-profiler-buttons {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 4px;
+
+    .dcg-btn-blue,
+    .dcg-btn-red,
+    .dcg-btn-light-gray {
+      margin: 0;
+    }
+  }
+
+  .dsm-profiler-record-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    vertical-align: 1px;
+
+    &.dsm-profiler-recording {
+      border-radius: 1px;
+      animation: dsm-profiler-pulse 1.2s ease-in-out infinite;
+    }
+  }
+
+  .dsm-profiler-controls .dcg-component-checkbox {
+    margin-top: 4px;
+    font-size: 12px;
+  }
+
+  .dsm-profiler-status {
+    min-height: 1.3em;
+    font-size: 12px;
+    color: #666;
+  }
+
+  .dsm-profiler-empty,
+  .dsm-profiler-explainer {
+    margin: 8px 0;
+    font-size: 13px;
+    color: #666;
+    line-height: 1.4;
+  }
+
+  .dsm-profiler-results {
+    margin-top: 6px;
+  }
+
+  .dsm-profiler-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin: 8px 0 4px;
+    font-size: 12px;
+    color: #444;
+  }
+
+  .dsm-profiler-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: default;
+  }
+
+  .dsm-profiler-swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+  }
+
+  .dsm-profiler-rows {
+    max-height: 340px;
+    overflow-y: auto;
+    margin: 0 -4px;
+  }
+
+  .dsm-profiler-row {
+    padding: 5px 4px;
+    border-radius: 4px;
+    cursor: pointer;
+
+    &:hover,
+    &:focus-visible {
+      background: rgba(0, 0, 0, 0.05);
+    }
+
+    &.dsm-profiler-row-static {
+      cursor: default;
+    }
+
+    & + .dsm-profiler-row {
+      border-top: 1px solid rgba(0, 0, 0, 0.06);
+    }
+  }
+
+  .dsm-profiler-row-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .dsm-profiler-row-number {
+    flex: none;
+    min-width: 1.6em;
+    font-size: 11px;
+    color: #999;
+    text-align: right;
+  }
+
+  .dsm-profiler-row-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 13px;
+    // Fade long expressions out instead of hard-clipping them.
+    mask-image: linear-gradient(to right, #000 85%, transparent);
+  }
+
+  .dsm-profiler-missing {
+    font-style: italic;
+    color: #888;
+  }
+
+  .dsm-profiler-row-time {
+    flex: none;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: #333;
+  }
+
+  // Tooltips wrap their child in an inline container; let bars fill the row.
+  .dsm-profiler-row > .dcg-tooltip-hit-area-container {
+    display: block;
+  }
+
+  .dsm-profiler-bar {
+    display: flex;
+    height: 6px;
+    margin: 4px 0 0 calc(1.6em + 6px);
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+
+    &.dsm-profiler-bar-gpu {
+      height: 3px;
+      margin-top: 2px;
+    }
+  }
+
+  .dsm-profiler-bar-segment {
+    flex: none;
+    height: 100%;
+  }
+
+  .dsm-profiler-badges {
+    margin-left: calc(1.6em + 6px);
+    font-size: 11px;
+    color: #777;
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  .dsm-profiler-pill {
+    flex: none;
+    padding: 0 6px;
+    border-radius: 8px;
+    font-size: 11px;
+    line-height: 16px;
+    background: #f3e8ff;
+    color: @shader;
+  }
+
+  .dsm-profiler-link {
+    display: inline-block;
+    margin: 4px 0;
+    font-size: 12px;
+    color: @compile;
+    cursor: pointer;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  .dsm-profiler-unattributed {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+    font-size: 11px;
+    color: #777;
+  }
+}
+
+@keyframes dsm-profiler-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}

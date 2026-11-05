@@ -234,6 +234,69 @@ performance-info-compiling = Compiling
 performance-info-rendering = Rendering
 performance-info-other = Other
 
+## Profiler
+profiler-name = Profiler
+profiler-desc = Measures how long each expression takes to compile, graph, draw, and compile shaders, including definitions used inside other expressions.
+profiler-record = Record
+profiler-stop = Stop
+profiler-pin-tooltip = Keep open while you use the graph
+profiler-record-load = Profile graph load
+profiler-record-load-tooltip = Start recording and reload the graph, to measure how long it takes to open
+profiler-gpu = Measure GPU time
+profiler-gpu-tooltip = Time each 3D draw on the GPU. Adds a little overhead while recording.
+profiler-empty = Press Record, then use the graph: edit expressions, drag sliders, or rotate the view. Or profile a fresh load of the whole graph.
+profiler-empty-recording = Recording. Interact with the graph, then press Stop.
+profiler-status-recording = Recording
+profiler-status-duration = { $duration }
+profiler-status-updates = { $count ->
+    [one] 1 update
+   *[other] { $count } updates
+}
+profiler-status-frames = { $count ->
+    [one] 1 3D frame
+   *[other] { $count } 3D frames
+}
+profiler-tabs-label = Profiler view
+profiler-tab-expressions = Expressions
+profiler-tab-definitions = Definitions
+profiler-segment-compile = Compile
+profiler-segment-compile-tooltip = Compiling the expression, including the definitions it uses and any constants it folds
+profiler-segment-graph = Graph
+profiler-segment-graph-tooltip = Computing what to plot: sampling curves, meshing surfaces, and solving implicits
+profiler-segment-draw = Draw
+profiler-segment-draw-tooltip = Drawing the plot on screen (CPU time)
+profiler-segment-shader = Shaders
+profiler-segment-shader-tooltip = Setting up 3D shaders, mostly waiting for new shaders to compile
+profiler-segment-gpu = GPU
+profiler-segment-gpu-tooltip = Time the GPU spent drawing (runs alongside the CPU)
+profiler-no-expressions = Nothing measurable was recorded for any expression.
+profiler-unknown-expression = Deleted expression ({ $id })
+profiler-badge-shader-compiles = { $count ->
+    [one] 1 new shader
+   *[other] { $count } new shaders
+}
+profiler-badge-shader-wait = waited { $duration } for shader compile
+profiler-badge-error = error
+profiler-definitions-explainer = Desmos compiles a definition again inside every expression that uses it. This is the compile time each definition added, summed over every use.
+profiler-no-definitions = No definitions were compiled while recording.
+profiler-definition-uses = compiled { $compiles ->
+    [one] once
+   *[other] { $compiles } times
+} in { $exprs ->
+    [one] 1 expression
+   *[other] { $exprs } expressions
+}
+profiler-definition-hits = { $count } reused
+profiler-definition-tooltip = { $self } on its own, { $inclusive } including definitions it uses
+profiler-wackscope = wackscope
+profiler-wackscope-tooltip = Errors on its own, but works inside other expressions that provide the missing variables
+profiler-show-all = Show all { $count }
+profiler-show-less = Show less
+profiler-unattributed = Not tied to an expression
+profiler-unattributed-tooltip = Work Desmos does for the whole graph, such as setting up compilation, labels, intersections, axes, and 3D post-processing
+profiler-other = Other
+profiler-3d = 3D
+
 ## Better Evaluation View
 better-evaluation-view-name = Better Evaluation View
 better-evaluation-view-desc = Displays list elements, colors, and undefined values

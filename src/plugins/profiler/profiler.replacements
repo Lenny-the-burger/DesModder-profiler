@@ -1,0 +1,282 @@
+# Replacements for the per-expression profiler
+
+*plugin* `profiler`
+
+All worker-only hooks call `self.dsm_profiler?.…`. The shared module is also
+evaluated on the main thread, where `dsm_profiler` is not defined, so the hooks
+are no-ops there. In the worker, every hook is a cheap no-op unless recording.
+
+## Time analysis of each statement
+
+*Description* `Profile analysis (compile) time per statement`
+
+*worker_only*
+
+*Find* => `from`
+```js
+let $l = this.analyzeSingleStatement($u, $o, $n, $i, $s), $p = [];
+```
+
+*Replace* `from` with
+```js
+self.dsm_profiler?.beginAnalysis($u, $s);
+let $l = this.analyzeSingleStatement($u, $o, $n, $i, $s);
+self.dsm_profiler?.endAnalysis($u, $l);
+let $p = [];
+```
+
+## Time computing graph data of each statement
+
+*Description* `Profile graph (sampling/meshing) time per statement`
+
+*worker_only*
+
+*Find* => `from`
+```js
+let $p = $cde(this.analysis, $s, $c, this.postProgressUpdate.bind(this), this.childIntersections), $m = [];
+```
+
+*Replace* `from` with
+```js
+self.dsm_profiler?.beginGraph($s);
+let $p = $cde(this.analysis, $s, $c, this.postProgressUpdate.bind(this), this.childIntersections);
+self.dsm_profiler?.endGraph($s);
+let $m = [];
+```
+
+## Send the profile of each change set to the main thread
+
+*Description* `Attach the per-expression profile to timingData`
+
+*worker_only*
+
+*Find* => `from`
+```js
+$o.timeInWorker = $a - $n;
+```
+
+*Replace* `from` with
+```js
+$o.timeInWorker = $a - $n,
+$o.dsmProfile = self.dsm_profiler?.drainChangeSet();
+```
+
+## Attribute compile time to inlined global identifiers
+
+Desmos compiles a reference to a global by inlining its definition at the use
+site. This is what makes "wackscope" work (the definition is compiled in the
+scope of the use), and it means the cost of a definition shows up in every
+statement that uses it, so we record it per source symbol.
+
+*Description* `Profile compile time of each inlined identifier`
+
+*worker_only*
+
+*Find* => `from`
+```js
+let $P;
+if ($S instanceof $Cls) $P = $Ze($e, $S);
+else {
+  let $E = $o.newLexicalScope(), $M = $wa($e, $E);
+  $P = $Ze($M, $S)
+}
+return $o.cacheGlobal($y, $P, $S), $P
+```
+
+*Replace* `from` with
+```js
+let $P;
+const __dsmFrame = self.dsm_profiler?.enter($y, "id");
+try {
+  if ($S instanceof $Cls) $P = $Ze($e, $S);
+  else {
+    let $E = $o.newLexicalScope(), $M = $wa($e, $E);
+    $P = $Ze($M, $S)
+  }
+} finally {
+  self.dsm_profiler?.exit(__dsmFrame);
+}
+return $o.cacheGlobal($y, $P, $S), $P
+```
+
+## Count references resolved from an already-compiled identifier
+
+*Description* `Profile cache hits of inlined identifiers`
+
+*worker_only*
+
+*Find* => `from`
+```js
+let $b = $o.getSymbol($y);
+if ($b !== void 0) return $b;
+```
+
+*Replace* `from` with
+```js
+let $b = $o.getSymbol($y);
+if ($b !== void 0) {
+  self.dsm_profiler?.hit($y);
+  return $b;
+}
+```
+
+## Attribute compile time to inlined user function calls
+
+*Description* `Profile compile time of each inlined function call`
+
+*worker_only*
+
+*Find* => `from`
+```js
+return $t.recursionInfo ? $G8($s, $t, $t.recursionInfo) : $Ze($s, $t._expression)
+```
+
+*Replace* `from` with
+```js
+const __dsmFrame = self.dsm_profiler?.enter($t._symbol, "fn");
+try {
+  return $t.recursionInfo ? $G8($s, $t, $t.recursionInfo) : $Ze($s, $t._expression)
+} finally {
+  self.dsm_profiler?.exit(__dsmFrame);
+}
+```
+
+## Tag 3D meshes with their expression id
+
+*Description* `Tag 3D meshes with their expression id for profiling`
+
+*worker_only*
+
+*Find* => `from`
+```js
+finalizeSurface($t) {
+```
+
+*Replace* `from` with
+```js
+finalizeSurface($t) {
+  self.dsm_profiler?.tagSurface($t);
+```
+
+## Track which expression each 3D draw call belongs to
+
+*Description* `Track the expression of each 3D draw call`
+
+*worker_only*
+
+*Find* => `from`
+```js
+renderBufferDirect = function ($X, $ve, $Ge, $Tt, $Or, $cr) {
+```
+
+*Replace* `from` with
+```js
+renderBufferDirect = function ($X, $ve, $Ge, $Tt, $Or, $cr) {
+  self.dsm_profiler?.setDrawObject($Or);
+```
+
+## Time three.js program setup (including shader compiles) per draw
+
+*Description* `Profile 3D program setup per expression`
+
+*worker_only*
+
+*Find* => `from`
+```js
+$bn = $rj($X, $ve, $Tt, $Or);
+$Ce.setMaterial($Tt, $En);
+```
+
+*Replace* `from` with
+```js
+$bn = self.dsm_profiler
+  ? self.dsm_profiler.timeSetProgram(() => $rj($X, $ve, $Tt, $Or))
+  : $rj($X, $ve, $Tt, $Or);
+$Ce.setMaterial($Tt, $En);
+```
+
+## Send the profile of each 3D frame to the main thread
+
+*Description* `Attach the per-expression profile to 3D render info`
+
+*worker_only*
+
+*Find* => `from`
+```js
+$M.durationCPU = performance.now() - $s,
+```
+
+*Replace* `from` with
+```js
+$M.durationCPU = performance.now() - $s,
+$M.dsmProfile = self.dsm_profiler?.drainFrame(),
+```
+
+## Tell the worker whether to profile
+
+*Description* `Send profiler flags with each worker message`
+
+*Find* => `from`
+```js
+this.worker.postMessage({ connectionId: this.guid, originalMessage: $e }, $t)
+```
+
+*Replace* `from` with
+```js
+this.worker.postMessage({
+  connectionId: this.guid,
+  originalMessage: $e,
+  dsmProfiler: window.DSM?.profiler?.workerFlags()
+}, $t)
+```
+
+## Receive 3D frame profiles
+
+*Description* `Receive per-expression 3D frame profiles`
+
+*Find* => `from`
+```js
+case "redraw3dResult":
+  this.onRedraw3dResults($t.payload);
+```
+
+*Replace* `from` with
+```js
+case "redraw3dResult":
+  window.DSM?.profiler?.onRedraw3dResult($t.payload);
+  this.onRedraw3dResults($t.payload);
+```
+
+## Time canvas drawing of each sketch
+
+*Description* `Profile 2D canvas drawing per expression`
+
+*Find* => `from`
+```js
+$r.drawSketchToCtx({
+  sketch: $t[$u],
+  drawContext: $e,
+  poiLabelsLayer: $i,
+  clickableObjectsLayer: $a,
+  geometryContext: this.controller.getGeoModel()
+})
+```
+
+*Replace* `from` with
+```js
+(window.DSM?.profiler
+  ? window.DSM.profiler.timeSketch($t[$u], () => $r.drawSketchToCtx({
+      sketch: $t[$u],
+      drawContext: $e,
+      poiLabelsLayer: $i,
+      clickableObjectsLayer: $a,
+      geometryContext: this.controller.getGeoModel()
+    }))
+  : $r.drawSketchToCtx({
+      sketch: $t[$u],
+      drawContext: $e,
+      poiLabelsLayer: $i,
+      clickableObjectsLayer: $a,
+      geometryContext: this.controller.getGeoModel()
+    }))
+```
