@@ -75,6 +75,20 @@ describe("Profiler", () => {
     const f = summary.sources.find((r) => r.symbol === "f");
     expect(f).toMatchObject({ kind: "fn", definedBy: "2", wackscope: false });
 
+    // The flame graph opens from the menu, shows the recording, and Escape
+    // steps back out of it.
+    await driver.click(BUTTON);
+    await driver.assertSelector(POPUP);
+    await driver.click(".dsm-profiler-open-flame");
+    await driver.assertSelector(".dsm-flame-panel");
+    await driver.assertSelector(".dsm-flame-canvas");
+    const names = await driver.evaluate(() =>
+      DSM.profiler!.flameGraph.getTree().children.map((c) => c.key)
+    );
+    expect(names).toContain("compile");
+    await driver.keyboard.press("Escape");
+    await driver.assertSelectorNot(".dsm-flame-panel");
+
     // Not recording: nothing more is collected.
     await driver.evaluate(() => Calc.setExpression({ id: "4", latex: "y=x" }));
     await driver.waitForFunction(

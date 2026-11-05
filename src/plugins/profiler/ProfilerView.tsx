@@ -136,6 +136,13 @@ export class ProfilerView extends Component<{
   results() {
     return (
       <div class="dsm-profiler-results">
+        <Button
+          color="light-gray"
+          class="dsm-profiler-open-flame"
+          onTap={() => this.p().openFlameGraph()}
+        >
+          {format("profiler-open-flame")}
+        </Button>
         <SegmentedControl
           names={() => TABS.map((t) => format(`profiler-tab-${t}`))}
           selectedIndex={() => TABS.indexOf(this.p().tab)}

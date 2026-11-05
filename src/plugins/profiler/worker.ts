@@ -6,21 +6,20 @@
  * whenever DesModder loads, regardless of whether the profiler is recording.
  */
 import {
+  CallNode,
+  CallTree,
   ChangeSetProfile,
   FrameProfile,
   ObjectFrameStat,
   ProfilerFlags,
   StatementStat,
   SymbolKind,
-  SymbolStat,
   UNATTRIBUTED,
 } from "./types";
 
 interface CompileFrame {
-  stat: SymbolStat;
+  node: CallNode;
   start: number;
-  /** Time spent in nested symbol frames. */
-  child: number;
 }
 
 interface PendingQuery {
@@ -47,6 +46,8 @@ export function createWorkerProfiler(
   let statements: Record<string, StatementStat> = {};
   /** Statement currently being analyzed or graphed. */
   let current: string | undefined;
+  /** Root of the call tree for the current statement and phase. */
+  let currentRoot: CallTree | undefined;
   let phaseStart = 0;
   const stack: CompileFrame[] = [];
 
@@ -56,25 +57,41 @@ export function createWorkerProfiler(
       analysisCount: 0,
       graph: 0,
       graphCount: 0,
-      symbols: {},
+      compileCalls: {},
+      graphCalls: {},
     });
   }
 
-  function symbolStat(
-    symbol: string,
-    kind: SymbolKind
-  ): SymbolStat | undefined {
-    if (current === undefined) return undefined;
-    const { symbols } = statement(current);
-    const key = `${kind}:${symbol}`;
-    return (symbols[key] ??= {
+  /** The node for `symbol` under the innermost open frame. */
+  function callNode(symbol: string, kind: SymbolKind): CallNode | undefined {
+    if (currentRoot === undefined) return undefined;
+    const parent = stack[stack.length - 1];
+    const siblings = parent ? (parent.node.children ??= {}) : currentRoot;
+    return (siblings[`${kind}:${symbol}`] ??= {
       kind,
       symbol,
-      compiles: 0,
+      count: 0,
       hits: 0,
-      inclusive: 0,
-      self: 0,
+      time: 0,
     });
+  }
+
+  function beginPhase(id: string | undefined, root?: "compile" | "graph") {
+    current = id;
+    currentRoot =
+      id === undefined || root === undefined
+        ? undefined
+        : root === "compile"
+          ? statement(id).compileCalls
+          : statement(id).graphCalls;
+    stack.length = 0;
+    phaseStart = now();
+  }
+
+  function endPhase() {
+    current = undefined;
+    currentRoot = undefined;
+    stack.length = 0;
   }
 
   // ---- 3D frame state ----
@@ -142,8 +159,7 @@ export function createWorkerProfiler(
         // Drop partial data so a later recording starts clean.
         statements = {};
         objects = {};
-        current = undefined;
-        stack.length = 0;
+        endPhase();
       }
     },
 
@@ -153,9 +169,8 @@ export function createWorkerProfiler(
       if (!flags.enabled) return;
       // Only the main analysis pass corresponds to the user's expressions;
       // regression passes re-analyze statements with a different frame.
-      current = mode === "main" ? id : undefined;
-      stack.length = 0;
-      phaseStart = now();
+      if (mode === "main") beginPhase(id, "compile");
+      else beginPhase(undefined);
     },
 
     endAnalysis(
@@ -165,7 +180,7 @@ export function createWorkerProfiler(
         | undefined
     ) {
       if (!flags.enabled || current !== id) {
-        current = undefined;
+        endPhase();
         return;
       }
       const stat = statement(id);
@@ -177,34 +192,32 @@ export function createWorkerProfiler(
         if (typeof name === "string") stat.definedName = name;
         stat.isError = state.error !== undefined;
       }
-      current = undefined;
+      endPhase();
     },
 
     beginGraph(id: string) {
       if (!flags.enabled) return;
-      current = id;
-      stack.length = 0;
-      phaseStart = now();
+      beginPhase(id, "graph");
     },
 
     endGraph(id: string) {
       if (!flags.enabled || current !== id) {
-        current = undefined;
+        endPhase();
         return;
       }
       const stat = statement(id);
       stat.graph += now() - phaseStart;
       stat.graphCount++;
-      current = undefined;
+      endPhase();
     },
 
     // ---- compiler provenance (called per inlined definition) ----
 
     enter(symbol: string, kind: SymbolKind): CompileFrame | undefined {
       if (!flags.enabled) return undefined;
-      const stat = symbolStat(symbol, kind);
-      if (!stat) return undefined;
-      const frame = { stat, start: now(), child: 0 };
+      const node = callNode(symbol, kind);
+      if (!node) return undefined;
+      const frame = { node, start: now() };
       stack.push(frame);
       return frame;
     },
@@ -216,18 +229,14 @@ export function createWorkerProfiler(
       const index = stack.lastIndexOf(frame);
       if (index === -1) return;
       stack.length = index;
-      const elapsed = now() - frame.start;
-      frame.stat.compiles++;
-      frame.stat.inclusive += elapsed;
-      frame.stat.self += elapsed - frame.child;
-      const parent = stack[stack.length - 1];
-      if (parent) parent.child += elapsed;
+      frame.node.count++;
+      frame.node.time += now() - frame.start;
     },
 
     hit(symbol: string) {
       if (!flags.enabled) return;
-      const stat = symbolStat(symbol, "id");
-      if (stat) stat.hits++;
+      const node = callNode(symbol, "id");
+      if (node) node.hits++;
     },
 
     drainChangeSet(): ChangeSetProfile | undefined {

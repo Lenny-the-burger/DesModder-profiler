@@ -91,23 +91,50 @@ describe("worker profiler", () => {
     p.exit(again);
     p.hit("a");
     p.endAnalysis("1", result());
-    const syms = p.drainChangeSet()!.statements["1"].symbols;
-    expect(syms["fn:f"]).toEqual({
-      kind: "fn",
-      symbol: "f",
-      compiles: 1,
-      hits: 0,
-      inclusive: 7,
-      self: 3,
+    const tree = p.drainChangeSet()!.statements["1"].compileCalls;
+    // `a` inside `f`, and `a` again at top level, are separate nodes.
+    expect(tree).toEqual({
+      "fn:f": {
+        kind: "fn",
+        symbol: "f",
+        count: 1,
+        hits: 0,
+        time: 7,
+        children: {
+          "id:a": { kind: "id", symbol: "a", count: 1, hits: 0, time: 4 },
+        },
+      },
+      "id:a": { kind: "id", symbol: "a", count: 1, hits: 1, time: 5 },
     });
-    expect(syms["id:a"]).toEqual({
-      kind: "id",
-      symbol: "a",
-      compiles: 2,
-      hits: 1,
-      inclusive: 9,
-      self: 9,
-    });
+  });
+
+  test("merges repeated calls at the same path", () => {
+    const { clock, p } = setup();
+    p.beginAnalysis("1", "main");
+    for (let i = 0; i < 3; i++) {
+      const f = p.enter("f", "fn");
+      const a = p.enter("a", "id");
+      clock.advance(1);
+      p.exit(a);
+      p.exit(f);
+    }
+    p.endAnalysis("1", result());
+    const tree = p.drainChangeSet()!.statements["1"].compileCalls;
+    expect(tree["fn:f"].count).toBe(3);
+    expect(tree["fn:f"].time).toBe(3);
+    expect(tree["fn:f"].children!["id:a"].count).toBe(3);
+  });
+
+  test("keeps graph-phase calls separate from compile", () => {
+    const { clock, p } = setup();
+    p.beginGraph("1");
+    const a = p.enter("a", "id");
+    clock.advance(2);
+    p.exit(a);
+    p.endGraph("1");
+    const stat = p.drainChangeSet()!.statements["1"];
+    expect(stat.compileCalls).toEqual({});
+    expect(stat.graphCalls["id:a"].time).toBe(2);
   });
 
   test("recovers when an exception skips an exit", () => {
@@ -121,12 +148,13 @@ describe("worker profiler", () => {
     clock.advance(1);
     p.exit(next);
     p.endAnalysis("1", result());
-    const syms = p.drainChangeSet()!.statements["1"].symbols;
-    expect(syms["fn:f"].compiles).toBe(1);
-    expect(syms["fn:f"].self).toBe(2);
+    const tree = p.drainChangeSet()!.statements["1"].compileCalls;
+    expect(tree["fn:f"].count).toBe(1);
+    expect(tree["fn:f"].time).toBe(2);
+    // The abandoned `a` frame never completed.
+    expect(tree["fn:f"].children!["id:a"].count).toBe(0);
     // `b` is not treated as nested in the abandoned `a` frame.
-    expect(syms["id:b"].self).toBe(1);
-    expect(syms["id:a"].compiles).toBe(0);
+    expect(tree["id:b"].time).toBe(1);
   });
 
   test("attributes frame work to the tagged mesh", () => {

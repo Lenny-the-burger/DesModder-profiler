@@ -1,4 +1,5 @@
 import { PluginController } from "../PluginController";
+import { FlameGraphController } from "./FlameGraph";
 import { MainPopupFunc } from "./ProfilerView";
 import { Recording, Summary, emptyRecording, summarize } from "./aggregate";
 import {
@@ -49,6 +50,8 @@ export default class Profiler extends PluginController {
   tab: ProfilerTab = "expressions";
   showAll = false;
 
+  readonly flameGraph = new FlameGraphController(this);
+
   afterEnable() {
     this.dsm.pillboxMenus?.addPillboxButton({
       id: "dsm-profiler-menu",
@@ -64,6 +67,7 @@ export default class Profiler extends PluginController {
   }
 
   afterDisable() {
+    this.flameGraph.close();
     this.setRecording(false);
     this.cc.dispatcher.unregister(this.dispatchListenerID);
     this.dsm.pillboxMenus?.removePillboxButton("dsm-profiler-menu");
@@ -98,7 +102,10 @@ export default class Profiler extends PluginController {
       // Data arrives from the worker, canvas draws, and 3D frames, none of
       // which update views on their own. Refresh periodically instead of on
       // every frame.
-      this.liveTimer = setInterval(() => this.cc.updateViews(), LIVE_UPDATE_MS);
+      this.liveTimer = setInterval(() => {
+        this.cc.updateViews();
+        this.flameGraph.refresh();
+      }, LIVE_UPDATE_MS);
     }
   }
 
@@ -107,6 +114,7 @@ export default class Profiler extends PluginController {
     this.recordingStart = performance.now();
     this.setRecording(true);
     this.cc.updateViews();
+    this.flameGraph.refresh();
   }
 
   stopRecording() {
@@ -114,6 +122,7 @@ export default class Profiler extends PluginController {
     this.recordingEnd = performance.now();
     this.setRecording(false);
     this.cc.updateViews();
+    this.flameGraph.refresh();
   }
 
   toggleRecording() {
@@ -180,6 +189,10 @@ export default class Profiler extends PluginController {
       p.frames.length > 0 ||
       Object.keys(p.sketches).length > 0
     );
+  }
+
+  openFlameGraph() {
+    this.flameGraph.open();
   }
 
   setGpuTiming(gpu: boolean) {

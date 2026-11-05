@@ -2,7 +2,20 @@
  * Pure aggregation of recorded profiler payloads into tables. Kept free of
  * Desmos/DesModder imports so it can be unit tested directly.
  */
-import { ChangeSetProfile, FrameProfile, SymbolKind } from "./types";
+import {
+  CallNode,
+  CallTree,
+  ChangeSetProfile,
+  FrameProfile,
+  SymbolKind,
+} from "./types";
+
+/** Time spent in a call node excluding its children. */
+export function selfTime(node: CallNode): number {
+  let child = 0;
+  for (const c of Object.values(node.children ?? {})) child += c.time;
+  return Math.max(0, node.time - child);
+}
 
 export interface ChangeSetSample {
   profile: ChangeSetProfile;
@@ -142,26 +155,37 @@ export function summarize(rec: Recording, unattributedId: string): Summary {
         r.isError = !!stat.isError;
         r.definedName = stat.definedName;
       }
-      for (const [key, sym] of Object.entries(stat.symbols)) {
-        let s = sources.get(key);
-        if (!s) {
-          s = {
-            kind: sym.kind,
-            symbol: sym.symbol,
-            compiles: 0,
-            hits: 0,
-            self: 0,
-            inclusive: 0,
-            users: new Set(),
-          };
-          sources.set(key, s);
+      const visit = (tree: CallTree, ancestors: Set<string>) => {
+        for (const [key, node] of Object.entries(tree)) {
+          let s = sources.get(key);
+          if (!s) {
+            s = {
+              kind: node.kind,
+              symbol: node.symbol,
+              compiles: 0,
+              hits: 0,
+              self: 0,
+              inclusive: 0,
+              users: new Set(),
+            };
+            sources.set(key, s);
+          }
+          s.compiles += node.count;
+          s.hits += node.hits;
+          s.self += selfTime(node);
+          // A definition nested inside itself (recursion through inlining)
+          // would otherwise count the inner time twice.
+          if (!ancestors.has(key)) s.inclusive += node.time;
+          if (node.count > 0) s.users.add(id);
+          if (node.children) {
+            ancestors.add(key);
+            visit(node.children, ancestors);
+            ancestors.delete(key);
+          }
         }
-        s.compiles += sym.compiles;
-        s.hits += sym.hits;
-        s.self += sym.self;
-        s.inclusive += sym.inclusive;
-        if (sym.compiles > 0) s.users.add(id);
-      }
+      };
+      visit(stat.compileCalls, new Set());
+      visit(stat.graphCalls, new Set());
     }
     overhead.analysis += Math.max(0, cs.updateAnalysis - sumAnalysis);
     overhead.graph += Math.max(0, cs.graphAllChanges - sumGraph);

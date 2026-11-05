@@ -15,24 +15,29 @@ export interface ProfilerFlags {
 export type SymbolKind = "id" | "fn";
 
 /**
- * Cost of compiling one source symbol (a global identifier or a user function)
- * while compiling some statement. Because Desmos inlines definitions at the
- * use site, this is how the cost of a definition (including "wackscope"
- * definitions, which only work inside some binding scope) gets attributed
- * back to it.
+ * One node of a merged call tree: the cost of compiling a source symbol (a
+ * global identifier or a user function) at one position in the nesting of
+ * inlined definitions. Because Desmos inlines definitions at the use site,
+ * this is how the cost of a definition (including "wackscope" definitions,
+ * which only work inside some binding scope) gets attributed back to it.
+ *
+ * Calls at the same path are merged, so the tree stays bounded by the number
+ * of distinct nesting paths rather than the number of compiles.
  */
-export interface SymbolStat {
+export interface CallNode {
   kind: SymbolKind;
   symbol: string;
-  /** Number of times the definition was compiled (inlined). */
-  compiles: number;
-  /** Number of references resolved from an already-compiled scope entry. */
+  /** Number of times the definition was compiled (inlined) at this path. */
+  count: number;
+  /** References at this path resolved from an already-compiled scope entry. */
   hits: number;
-  /** Time including nested symbols, in ms. */
-  inclusive: number;
-  /** Time excluding nested symbols, in ms. */
-  self: number;
+  /** Time including children, in ms. */
+  time: number;
+  /** Keyed by `${kind}:${symbol}`. */
+  children?: Record<string, CallNode>;
 }
+
+export type CallTree = Record<string, CallNode>;
 
 export interface StatementStat {
   /** Time in `analyzeSingleStatement` (compiling, including constant folding). */
@@ -45,8 +50,10 @@ export interface StatementStat {
   definedName?: string;
   /** Desmos's own error state for this statement (`evaluationState.error`). */
   isError?: boolean;
-  /** Keyed by `${kind}:${symbol}`. */
-  symbols: Record<string, SymbolStat>;
+  /** Definitions inlined while compiling (analysis), as a call tree. */
+  compileCalls: CallTree;
+  /** Definitions inlined while computing graph data, as a call tree. */
+  graphCalls: CallTree;
 }
 
 /** One change set processed by the worker. */

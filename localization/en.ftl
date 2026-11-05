@@ -296,6 +296,31 @@ profiler-unattributed = Not tied to an expression
 profiler-unattributed-tooltip = Work Desmos does for the whole graph, such as setting up compilation, labels, intersections, axes, and 3D post-processing
 profiler-other = Other
 profiler-3d = 3D
+profiler-open-flame = Open flame graph
+profiler-flame-title = Flame graph
+profiler-flame-root-cpu = All CPU time
+profiler-flame-root-gpu = All GPU time
+profiler-flame-cpu = CPU
+profiler-flame-gpu = GPU
+profiler-flame-metric-label = Time measured
+profiler-flame-group-phase = By phase
+profiler-flame-group-expression = By expression
+profiler-flame-group-label = Group by
+profiler-flame-other-worker = Other worker work
+profiler-flame-shader-wait = Waiting for shader compile
+profiler-flame-search = Highlight
+profiler-flame-close = Close flame graph
+profiler-flame-empty = Nothing recorded yet. Record in the Profiler menu, then come back here.
+profiler-flame-matched = Highlighted: { $duration } ({ $percent })
+profiler-flame-of-total = { $percent } of total
+profiler-flame-of-parent = { $percent } of parent
+profiler-flame-self = { $duration } self
+profiler-flame-compiled = compiled { $count ->
+    [one] once
+   *[other] { $count } times
+}
+profiler-flame-jump-expression = Show expression
+profiler-flame-jump-definition = Show definition
 
 ## Better Evaluation View
 better-evaluation-view-name = Better Evaluation View

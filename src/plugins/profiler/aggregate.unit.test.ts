@@ -1,5 +1,5 @@
 import { Recording, summarize } from "./aggregate";
-import { StatementStat, SymbolStat, UNATTRIBUTED } from "./types";
+import { CallNode, CallTree, StatementStat, UNATTRIBUTED } from "./types";
 
 function stmt(partial: Partial<StatementStat>): StatementStat {
   return {
@@ -8,24 +8,24 @@ function stmt(partial: Partial<StatementStat>): StatementStat {
     graph: 0,
     graphCount: 0,
     isError: false,
-    symbols: {},
+    compileCalls: {},
+    graphCalls: {},
     ...partial,
   };
 }
 
-function sym(
+function call(
   symbol: string,
-  partial: Partial<SymbolStat>,
+  partial: Partial<CallNode>,
   kind: "id" | "fn" = "id"
-): Record<string, SymbolStat> {
+): CallTree {
   return {
     [`${kind}:${symbol}`]: {
       kind,
       symbol,
-      compiles: 0,
+      count: 0,
       hits: 0,
-      inclusive: 0,
-      self: 0,
+      time: 0,
       ...partial,
     },
   };
@@ -46,15 +46,22 @@ describe("summarize", () => {
             "2": stmt({
               analysis: 4,
               definedName: "f",
-              symbols: sym("a", { compiles: 1, self: 3, inclusive: 3 }),
+              compileCalls: call("a", { count: 1, time: 3 }),
             }),
             "3": stmt({
               analysis: 2,
               graph: 5,
-              symbols: {
-                ...sym("f", { compiles: 2, self: 1, inclusive: 2 }, "fn"),
-                ...sym("a", { compiles: 2, self: 1, inclusive: 1 }),
-                ...sym("c", { hits: 3 }),
+              compileCalls: {
+                ...call(
+                  "f",
+                  {
+                    count: 2,
+                    time: 2,
+                    children: call("a", { count: 2, time: 1 }),
+                  },
+                  "fn"
+                ),
+                ...call("c", { hits: 3 }),
               },
             }),
           },
@@ -141,7 +148,7 @@ describe("summarize", () => {
                 "1": stmt({
                   definedName: "a",
                   isError: true,
-                  symbols: sym("a", { compiles: 1 }),
+                  compileCalls: call("a", { count: 1 }),
                 }),
               },
             },
