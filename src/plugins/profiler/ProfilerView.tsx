@@ -98,6 +98,15 @@ export class ProfilerView extends Component<{
           </Tooltip>
         </div>
         <div class="dsm-profiler-status">{() => this.statusText()}</div>
+        <Tooltip tooltip={format("profiler-breakdown-tooltip")} gravity="s">
+          <Checkbox
+            checked={() => this.p().nodeBreakdown}
+            onChange={(checked) => this.p().setNodeBreakdown(checked)}
+            ariaLabel={() => format("profiler-breakdown")}
+          >
+            {() => format("profiler-breakdown")}
+          </Checkbox>
+        </Tooltip>
         <If predicate={() => this.p().is3d()}>
           {() => (
             <Tooltip tooltip={format("profiler-gpu-tooltip")} gravity="s">

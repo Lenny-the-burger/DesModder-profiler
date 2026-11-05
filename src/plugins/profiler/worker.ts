@@ -5,6 +5,7 @@
  * Every entry point must be cheap when disabled: the replacements are applied
  * whenever DesModder loads, regardless of whether the profiler is recording.
  */
+import { mergeCallTrees } from "./calltree";
 import {
   CallNode,
   CallTree,
@@ -17,10 +18,26 @@ import {
   UNATTRIBUTED,
 } from "./types";
 
-interface CompileFrame {
-  node: CallNode;
+interface Span {
+  input: string;
   start: number;
+  end: number;
 }
+
+interface CompileFrame {
+  start: number;
+  /** Definition frames: the node, created eagerly. */
+  node?: CallNode;
+  /** Parse-node frames: the source span, and children collected so far. */
+  span?: Span;
+  children?: CallTree;
+}
+
+/**
+ * Parse nodes that took less than this (and contain nothing kept) are
+ * dropped, leaving their time in the parent's self time. Keeps trees small.
+ */
+const MIN_NODE_MS = 0.02;
 
 interface PendingQuery {
   query: WebGLQuery;
@@ -40,7 +57,7 @@ export type WorkerProfiler = ReturnType<typeof createWorkerProfiler>;
 export function createWorkerProfiler(
   now: () => number = () => performance.now()
 ) {
-  let flags: ProfilerFlags = { enabled: false, gpu: false };
+  let flags: ProfilerFlags = { enabled: false, gpu: false, nodes: false };
 
   // ---- change set (2D and 3D evaluation) state ----
   let statements: Record<string, StatementStat> = {};
@@ -63,11 +80,17 @@ export function createWorkerProfiler(
   }
 
   /** The node for `symbol` under the innermost open frame. */
+  /** Where children of the innermost open frame go. */
+  function siblings(): CallTree | undefined {
+    const parent = stack[stack.length - 1];
+    if (!parent) return currentRoot;
+    if (parent.node) return (parent.node.children ??= {});
+    return (parent.children ??= {});
+  }
+
   function callNode(symbol: string, kind: SymbolKind): CallNode | undefined {
     if (currentRoot === undefined) return undefined;
-    const parent = stack[stack.length - 1];
-    const siblings = parent ? (parent.node.children ??= {}) : currentRoot;
-    return (siblings[`${kind}:${symbol}`] ??= {
+    return (siblings()![`${kind}:${symbol}`] ??= {
       kind,
       symbol,
       count: 0,
@@ -154,7 +177,7 @@ export function createWorkerProfiler(
 
     setFlags(next: ProfilerFlags | undefined) {
       const was = flags.enabled;
-      flags = next ?? { enabled: false, gpu: false };
+      flags = next ?? { enabled: false, gpu: false, nodes: false };
       if (was && !flags.enabled) {
         // Drop partial data so a later recording starts clean.
         statements = {};
@@ -229,8 +252,49 @@ export function createWorkerProfiler(
       const index = stack.lastIndexOf(frame);
       if (index === -1) return;
       stack.length = index;
-      frame.node.count++;
-      frame.node.time += now() - frame.start;
+      const elapsed = now() - frame.start;
+      if (frame.node) {
+        frame.node.count++;
+        frame.node.time += elapsed;
+        return;
+      }
+      const { span } = frame;
+      if (!span || (elapsed < MIN_NODE_MS && !frame.children)) return;
+      const target = siblings();
+      if (!target) return;
+      const node = (target[`node:${span.start}:${span.end}`] ??= {
+        kind: "node",
+        symbol: span.input.slice(span.start, span.end),
+        count: 0,
+        hits: 0,
+        time: 0,
+      });
+      node.count++;
+      node.time += elapsed;
+      if (frame.children)
+        mergeCallTrees((node.children ??= {}), frame.children);
+    },
+
+    /** Called around compiling each parse node (from `Ze`). */
+    enterNode(parseNode: {
+      getInputSpan?: () => Span | undefined;
+    }): CompileFrame | undefined {
+      if (!flags.enabled || !flags.nodes || currentRoot === undefined)
+        return undefined;
+      const span = parseNode?.getInputSpan?.();
+      if (!span) return undefined;
+      // Skip wrappers that cover exactly the same source as their parent.
+      const top = stack[stack.length - 1];
+      if (
+        top?.span &&
+        top.span.input === span.input &&
+        top.span.start === span.start &&
+        top.span.end === span.end
+      )
+        return undefined;
+      const frame: CompileFrame = { span, start: now() };
+      stack.push(frame);
+      return frame;
     },
 
     hit(symbol: string) {

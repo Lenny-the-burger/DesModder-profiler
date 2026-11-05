@@ -39,6 +39,11 @@ export default class Profiler extends PluginController {
   recording = false;
   /** Use GPU timer queries for 3D draws. Adds a query per draw call. */
   gpuTiming = false;
+  /**
+   * Break expressions down into their pieces while compiling. Off by default:
+   * it times every parse node, which slows compiling down noticeably.
+   */
+  nodeBreakdown = false;
   profile: Recording = emptyRecording();
   /** performance.now() when the current or last recording started/stopped. */
   recordingStart = 0;
@@ -90,7 +95,11 @@ export default class Profiler extends PluginController {
 
   /** Sent to the worker with every message (see profiler.replacements). */
   workerFlags(): ProfilerFlags {
-    return { enabled: this.recording, gpu: this.recording && this.gpuTiming };
+    return {
+      enabled: this.recording,
+      gpu: this.recording && this.gpuTiming,
+      nodes: this.recording && this.nodeBreakdown,
+    };
   }
 
   private setRecording(recording: boolean) {
@@ -193,6 +202,11 @@ export default class Profiler extends PluginController {
 
   openFlameGraph() {
     this.flameGraph.open();
+  }
+
+  setNodeBreakdown(nodes: boolean) {
+    this.nodeBreakdown = nodes;
+    this.cc.updateViews();
   }
 
   setGpuTiming(gpu: boolean) {

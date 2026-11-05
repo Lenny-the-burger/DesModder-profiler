@@ -3,6 +3,7 @@
  * caller, so this can be unit tested without Desmos.
  */
 import { Recording, Summary } from "./aggregate";
+import { mergeCallTrees } from "./calltree";
 import { CallTree, SymbolKind, UNATTRIBUTED } from "./types";
 
 /** Determines the color of a node. */
@@ -22,6 +23,7 @@ export type FlameNodeKind =
   | "expression"
   | "definition"
   | "overhead"
+  | "subexpression"
   | "detail";
 
 export interface FlameNode {
@@ -36,6 +38,8 @@ export interface FlameNode {
   count?: number;
   /** Expression this node belongs to, if any. */
   exprId?: string;
+  /** For pieces of an expression: their source LaTeX. */
+  latex?: string;
   /** For definitions. */
   symbol?: string;
   symbolKind?: SymbolKind;
@@ -59,22 +63,7 @@ export interface FlameLabels {
 
 type Phase = "compile" | "graph" | "draw" | "shader";
 
-/** Merge call trees for the same statement across change sets. */
-export function mergeCallTrees(target: CallTree, source: CallTree) {
-  for (const [key, node] of Object.entries(source)) {
-    const t = (target[key] ??= {
-      kind: node.kind,
-      symbol: node.symbol,
-      count: 0,
-      hits: 0,
-      time: 0,
-    });
-    t.count += node.count;
-    t.hits += node.hits;
-    t.time += node.time;
-    if (node.children) mergeCallTrees((t.children ??= {}), node.children);
-  }
-}
+export { mergeCallTrees } from "./calltree";
 
 function finish(node: FlameNode): FlameNode {
   node.children = node.children
@@ -117,6 +106,18 @@ export function buildFlameTree(
   ): FlameNode[] =>
     Object.entries(tree ?? {}).map(([key, call]) => {
       const info = sourceInfo.get(key);
+      if (call.kind === "node")
+        return {
+          key,
+          name: latexToText(call.symbol),
+          kind: "subexpression",
+          category,
+          value: call.time,
+          count: call.count,
+          exprId,
+          latex: call.symbol,
+          children: callsToNodes(call.children, category, exprId),
+        };
       return {
         key,
         name: labels.definition(call.symbol, call.kind),

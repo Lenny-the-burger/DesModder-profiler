@@ -10,9 +10,15 @@ export interface ProfilerFlags {
   enabled: boolean;
   /** Use GPU timer queries for 3D draws (only if the extension exists). */
   gpu: boolean;
+  /** Break expressions down into their parse nodes while compiling. */
+  nodes: boolean;
 }
 
-export type SymbolKind = "id" | "fn";
+/**
+ * `id` and `fn` are inlined definitions; `node` is a piece of an expression
+ * (a parse node), whose `symbol` is its source LaTeX.
+ */
+export type SymbolKind = "id" | "fn" | "node";
 
 /**
  * One node of a merged call tree: the cost of compiling a source symbol (a

@@ -10,11 +10,20 @@ import {
   SymbolKind,
 } from "./types";
 
-/** Time spent in a call node excluding its children. */
+/** Time in the nearest nested definitions, looking through parse nodes. */
+function nestedDefinitionTime(tree: CallTree | undefined): number {
+  let t = 0;
+  for (const c of Object.values(tree ?? {}))
+    t += c.kind === "node" ? nestedDefinitionTime(c.children) : c.time;
+  return t;
+}
+
+/**
+ * Time spent in a definition excluding the definitions it inlines. Parse
+ * nodes inside it are part of its own body, so they count as self time.
+ */
 export function selfTime(node: CallNode): number {
-  let child = 0;
-  for (const c of Object.values(node.children ?? {})) child += c.time;
-  return Math.max(0, node.time - child);
+  return Math.max(0, node.time - nestedDefinitionTime(node.children));
 }
 
 export interface ChangeSetSample {
@@ -157,6 +166,11 @@ export function summarize(rec: Recording, unattributedId: string): Summary {
       }
       const visit = (tree: CallTree, ancestors: Set<string>) => {
         for (const [key, node] of Object.entries(tree)) {
+          // Pieces of expressions aren't definitions; look inside them.
+          if (node.kind === "node") {
+            if (node.children) visit(node.children, ancestors);
+            continue;
+          }
           let s = sources.get(key);
           if (!s) {
             s = {

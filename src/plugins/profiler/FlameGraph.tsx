@@ -223,6 +223,7 @@ export class FlameGraphController {
    * to, or for a definition, the expression that defines it.
    */
   detailLatex(node: FlameNode): string | undefined {
+    if (node.latex !== undefined) return node.latex;
     if (node.kind === "definition") {
       const defining =
         node.definedBy !== undefined
@@ -407,13 +408,6 @@ class FlameGraphView extends Component<{ fg: () => FlameGraphController }> {
         <If predicate={() => this.fg().detailLatex(d().node) !== undefined}>
           {() => (
             <div class="dsm-flame-details-name dsm-flame-details-math">
-              <If predicate={() => d().node.kind !== "expression"}>
-                {() => (
-                  <span class="dsm-flame-details-caption">
-                    {() => d().node.name}
-                  </span>
-                )}
-              </If>
               <StaticMathQuillView
                 latex={() => this.fg().detailLatex(d().node) ?? ""}
               />

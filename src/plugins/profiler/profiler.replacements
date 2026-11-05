@@ -141,6 +141,34 @@ try {
 }
 ```
 
+## Attribute compile time to pieces of expressions
+
+Every parse node keeps the span of source LaTeX it came from, so timing each
+node's compile breaks an expression down into its parts. Constant folding
+happens here too, so for constant expressions this covers their evaluation.
+
+*Description* `Profile compile time of each parse node`
+
+*worker_only*
+
+*Find* => `from`
+```js
+$n = $Cae($e, $t), $n = $Eae($e, $i, $n), $Iae($e, $n);
+```
+
+*Replace* `from` with
+```js
+{
+  const __dsmNode = self.dsm_profiler?.enterNode($t);
+  try {
+    $n = $Cae($e, $t);
+  } finally {
+    self.dsm_profiler?.exit(__dsmNode);
+  }
+}
+$n = $Eae($e, $i, $n), $Iae($e, $n);
+```
+
 ## Tag 3D meshes with their expression id
 
 *Description* `Tag 3D meshes with their expression id for profiling`

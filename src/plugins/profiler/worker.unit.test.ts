@@ -14,7 +14,7 @@ function fakeClock() {
 function setup() {
   const clock = fakeClock();
   const p = createWorkerProfiler(clock.now);
-  p.setFlags({ enabled: true, gpu: false });
+  p.setFlags({ enabled: true, gpu: false, nodes: true });
   return { clock, p };
 }
 
@@ -176,8 +176,8 @@ describe("worker profiler", () => {
     p.beginAnalysis("1", "main");
     clock.advance(1);
     p.endAnalysis("1", result());
-    p.setFlags({ enabled: false, gpu: false });
-    p.setFlags({ enabled: true, gpu: false });
+    p.setFlags({ enabled: false, gpu: false, nodes: false });
+    p.setFlags({ enabled: true, gpu: false, nodes: true });
     expect(p.drainChangeSet()!.statements).toEqual({});
   });
 
@@ -191,12 +191,59 @@ describe("worker profiler", () => {
     };
     p.installMessageHook(scope);
     scope.onmessage!({
-      data: { dsmProfiler: { enabled: true, gpu: false } },
+      data: { dsmProfiler: { enabled: true, gpu: false, nodes: true } },
     });
     scope.onmessage!({ data: { dsmProfiler: undefined } });
     // Messages without the field (e.g. from a fake worker) leave flags alone.
-    p.setFlags({ enabled: true, gpu: false });
+    p.setFlags({ enabled: true, gpu: false, nodes: true });
     scope.onmessage!({ data: {} });
     expect(seen).toEqual([true, false, true]);
+  });
+});
+
+describe("parse node breakdown", () => {
+  const input = "a=f(b)+g(b)";
+  const node = (start: number, end: number) => ({
+    getInputSpan: () => ({ input, start, end }),
+  });
+
+  test("records pieces of an expression with their source", () => {
+    const { clock, p } = setup();
+    p.beginAnalysis("1", "main");
+    const whole = p.enterNode(node(2, 11));
+    // Same span as its parent: skipped.
+    expect(p.enterNode(node(2, 11))).toBeUndefined();
+    const f = p.enterNode(node(2, 6));
+    const def = p.enter("f", "fn");
+    clock.advance(3);
+    p.exit(def);
+    p.exit(f);
+    const g = p.enterNode(node(7, 11));
+    clock.advance(1);
+    p.exit(g);
+    // Too small to keep.
+    const tiny = p.enterNode(node(2, 3));
+    p.exit(tiny);
+    p.exit(whole);
+    p.endAnalysis("1", result());
+    const tree = p.drainChangeSet()!.statements["1"].compileCalls;
+    const top = tree["node:2:11"];
+    expect(top).toMatchObject({ kind: "node", symbol: "f(b)+g(b)", time: 4 });
+    expect(Object.keys(top.children!).sort()).toEqual([
+      "node:2:6",
+      "node:7:11",
+    ]);
+    expect(top.children!["node:2:6"]).toMatchObject({
+      symbol: "f(b)",
+      time: 3,
+    });
+    expect(top.children!["node:2:6"].children!["fn:f"].time).toBe(3);
+  });
+
+  test("is off unless the nodes flag is set", () => {
+    const p = createWorkerProfiler(() => 0);
+    p.setFlags({ enabled: true, gpu: false, nodes: false });
+    p.beginAnalysis("1", "main");
+    expect(p.enterNode(node(0, 3))).toBeUndefined();
   });
 });
