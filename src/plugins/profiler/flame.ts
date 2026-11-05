@@ -9,6 +9,7 @@ import { CallTree, SymbolKind, UNATTRIBUTED } from "./types";
 /** Determines the color of a node. */
 export type FlameCategory =
   | "root"
+  | "parse"
   | "compile"
   | "graph"
   | "draw"
@@ -54,14 +55,16 @@ export type FlameMetric = "cpu" | "gpu";
 
 export interface FlameLabels {
   root: (metric: FlameMetric) => string;
-  phase: (phase: "compile" | "graph" | "draw" | "shader" | "other") => string;
+  phase: (phase: Phase | "other") => string;
   expression: (id: string) => string;
   definition: (symbol: string, kind: SymbolKind) => string;
   unattributed: string;
   shaderWait: string;
 }
 
-type Phase = "compile" | "graph" | "draw" | "shader";
+type Phase = "parse" | "compile" | "graph" | "draw" | "shader";
+
+const PHASES: Phase[] = ["parse", "compile", "graph", "draw", "shader"];
 
 export { mergeCallTrees } from "./calltree";
 
@@ -146,6 +149,8 @@ export function buildFlameTree(
     if (!row) return undefined;
     const base = { key, name, kind, category: phase, exprId: id };
     switch (phase) {
+      case "parse":
+        return { ...base, value: row.parse, children: [] };
       case "compile":
         return {
           ...base,
@@ -229,12 +234,12 @@ export function buildFlameTree(
     };
   } else if (opts.grouping === "phase") {
     const overhead: Record<Phase, number> = {
+      parse: 0,
       compile: summary.overhead.analysis,
       graph: summary.overhead.graph,
       draw: un3d?.cpuDraw ?? 0,
       shader: un3d?.setProgram ?? 0,
     };
-    const phases: Phase[] = ["compile", "graph", "draw", "shader"];
     root = {
       key: "root",
       name: labels.root("cpu"),
@@ -242,7 +247,7 @@ export function buildFlameTree(
       category: "root",
       value: 0,
       children: [
-        ...phases.map((phase) =>
+        ...PHASES.map((phase) =>
           sumChildren({
             key: phase,
             name: labels.phase(phase),
@@ -278,7 +283,6 @@ export function buildFlameTree(
       ],
     };
   } else {
-    const phases: Phase[] = ["compile", "graph", "draw", "shader"];
     root = {
       key: "root",
       name: labels.root("cpu"),
@@ -294,7 +298,7 @@ export function buildFlameTree(
             category: "expression",
             value: 0,
             exprId: id,
-            children: phases.flatMap(
+            children: PHASES.flatMap(
               (phase) =>
                 phaseOfExpression(
                   phase,

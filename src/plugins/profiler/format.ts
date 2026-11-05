@@ -61,12 +61,19 @@ export function symbolToLatex(symbol: string): string {
 }
 
 /** The categories shown in the stacked bars, in display order. */
-export const SEGMENTS = ["compile", "graph", "draw", "shader"] as const;
+export const SEGMENTS = [
+  "parse",
+  "compile",
+  "graph",
+  "draw",
+  "shader",
+] as const;
 export type Segment = (typeof SEGMENTS)[number];
 
 /** Split an expression's CPU time into the displayed categories. */
 export function segmentsOf(row: ExpressionRow): Record<Segment, number> {
   return {
+    parse: row.parse,
     compile: row.analysis,
     graph: row.graph,
     draw: row.canvas + row.cpuDraw,

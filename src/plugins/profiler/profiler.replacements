@@ -25,6 +25,49 @@ self.dsm_profiler?.endAnalysis($u, $l);
 let $p = [];
 ```
 
+## Time compiling click handlers and domains of each statement
+
+*Description* `Profile compile time after the main analysis (click handlers, domains) per statement`
+
+*worker_only*
+
+After analyzing every statement, Desmos compiles click handlers and
+parametric domains in a separate loop. Count that as the statement's compile.
+
+*Find* => `from`
+```js
+$k.graphingEnabled() && $XY(this.analysis[$id], this.moduleContexts.getPolicyContext(this.assertFullStatement($id).moduleID), $Fx(this.mainFrameContext, $L), $k)
+```
+
+*Replace* `from` with
+```js
+$k.graphingEnabled() && (
+  self.dsm_profiler?.beginPostAnalysis($id),
+  $XY(this.analysis[$id], this.moduleContexts.getPolicyContext(this.assertFullStatement($id).moduleID), $Fx(this.mainFrameContext, $L), $k),
+  self.dsm_profiler?.endPostAnalysis($id)
+)
+```
+
+## Time parsing each statement
+
+*Description* `Profile parse time per statement`
+
+*worker_only*
+
+*Find* => `from`
+```js
+this.addStatement($n, $hv($t.defaultModuleId))
+```
+
+*Replace* `from` with
+```js
+(
+  self.dsm_profiler?.beginParse($n.id),
+  this.addStatement($n, $hv($t.defaultModuleId)),
+  self.dsm_profiler?.endParse($n.id)
+)
+```
+
 ## Time computing graph data of each statement
 
 *Description* `Profile graph (sampling/meshing) time per statement`

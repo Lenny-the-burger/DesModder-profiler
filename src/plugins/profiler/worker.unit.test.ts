@@ -60,6 +60,26 @@ describe("worker profiler", () => {
     expect(p.drainChangeSet()!.statements).toEqual({});
   });
 
+  test("records parse time and the post-analysis pass", () => {
+    const { clock, p } = setup();
+    p.beginParse("1");
+    clock.advance(2);
+    p.endParse("1");
+    p.beginAnalysis("1", "main");
+    clock.advance(3);
+    p.endAnalysis("1", result());
+    // Click handlers compile after every statement is analyzed; definitions
+    // they inline are attributed to the statement too.
+    p.beginPostAnalysis("1");
+    const f = p.enter("a", "id");
+    clock.advance(4);
+    p.exit(f);
+    p.endPostAnalysis("1");
+    const stat = p.drainChangeSet()!.statements["1"];
+    expect(stat).toMatchObject({ parse: 2, analysis: 7, analysisCount: 1 });
+    expect(stat.compileCalls["id:a"].time).toBe(4);
+  });
+
   test("ignores non-main analysis passes", () => {
     const { clock, p } = setup();
     p.beginAnalysis("1", "regression");

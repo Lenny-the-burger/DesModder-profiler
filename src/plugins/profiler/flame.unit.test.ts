@@ -24,6 +24,7 @@ const labels: FlameLabels = {
 
 function stmt(partial: Partial<StatementStat>): StatementStat {
   return {
+    parse: 0,
     analysis: 0,
     analysisCount: 1,
     graph: 0,

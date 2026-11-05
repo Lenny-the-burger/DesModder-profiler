@@ -46,7 +46,12 @@ export interface CallNode {
 export type CallTree = Record<string, CallNode>;
 
 export interface StatementStat {
-  /** Time in `analyzeSingleStatement` (compiling, including constant folding). */
+  /** Time parsing the statement's LaTeX, before analysis. */
+  parse: number;
+  /**
+   * Time in `analyzeSingleStatement` (compiling, including constant folding),
+   * plus compiling click handlers and parametric domains afterwards.
+   */
   analysis: number;
   analysisCount: number;
   /** Time computing graph data (sampling, meshing, GLSL generation). */

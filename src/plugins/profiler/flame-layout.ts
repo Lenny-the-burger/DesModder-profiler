@@ -66,6 +66,7 @@ export function rowCount(rects: FlameRect[]): number {
 const PALETTE: Record<FlameCategory, [number, number, number, number]> = {
   root: [215, 12, 80, 80],
   expression: [215, 18, 72, 84],
+  parse: [200, 55, 70, 82],
   compile: [210, 60, 52, 72],
   graph: [130, 40, 50, 68],
   draw: [27, 90, 58, 72],

@@ -52,6 +52,8 @@ export function emptyRecording(): Recording {
 
 export interface ExpressionRow {
   id: string;
+  /** Worker time parsing the expression's LaTeX. */
+  parse: number;
   /** Worker compile time, including folding constants. */
   analysis: number;
   /** Worker graph-data time (sampling, meshing, GLSL generation). */
@@ -69,7 +71,7 @@ export interface ExpressionRow {
   /** 3D: number of programs linked (new shader programs). */
   links: number;
   draws: number;
-  /** Total of the disjoint CPU columns (analysis, graph, canvas, cpuDraw, setProgram). */
+  /** Total of the disjoint CPU columns (parse, analysis, graph, canvas, cpuDraw, setProgram). */
   total: number;
   definedName?: string;
   isError: boolean;
@@ -100,7 +102,7 @@ export interface Overhead {
   analysis: number;
   /** Graph time not attributable to any single statement. */
   graph: number;
-  /** Worker time outside analysis and graph (events, labels, intersections). */
+  /** Worker time outside parsing, analysis and graph (events, labels, statuses). */
   other: number;
 }
 
@@ -118,6 +120,7 @@ export interface Summary {
 function emptyRow(id: string): ExpressionRow {
   return {
     id,
+    parse: 0,
     analysis: 0,
     graph: 0,
     canvas: 0,
@@ -151,11 +154,14 @@ export function summarize(rec: Recording, unattributedId: string): Summary {
   const overhead: Overhead = { analysis: 0, graph: 0, other: 0 };
 
   for (const cs of rec.changeSets) {
+    let sumParse = 0;
     let sumAnalysis = 0;
     let sumGraph = 0;
     for (const [id, stat] of Object.entries(cs.profile.statements)) {
       const r = row(id);
+      r.parse += stat.parse;
       r.analysis += stat.analysis;
+      sumParse += stat.parse;
       r.graph += stat.graph;
       sumAnalysis += stat.analysis;
       sumGraph += stat.graph;
@@ -205,7 +211,7 @@ export function summarize(rec: Recording, unattributedId: string): Summary {
     overhead.graph += Math.max(0, cs.graphAllChanges - sumGraph);
     overhead.other += Math.max(
       0,
-      cs.timeInWorker - cs.updateAnalysis - cs.graphAllChanges
+      cs.timeInWorker - cs.updateAnalysis - cs.graphAllChanges - sumParse
     );
   }
 
@@ -227,7 +233,8 @@ export function summarize(rec: Recording, unattributedId: string): Summary {
 
   const idByName = new Map<string, string>();
   for (const r of rows.values()) {
-    r.total = r.analysis + r.graph + r.canvas + r.cpuDraw + r.setProgram;
+    r.total =
+      r.parse + r.analysis + r.graph + r.canvas + r.cpuDraw + r.setProgram;
     if (r.definedName !== undefined) idByName.set(r.definedName, r.id);
   }
 

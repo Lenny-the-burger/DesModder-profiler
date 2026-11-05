@@ -66,10 +66,14 @@ export function createWorkerProfiler(
   /** Root of the call tree for the current statement and phase. */
   let currentRoot: CallTree | undefined;
   let phaseStart = 0;
+  /** Statement currently being parsed (outside any analysis phase). */
+  let parsing: string | undefined;
+  let parseStart = 0;
   const stack: CompileFrame[] = [];
 
   function statement(id: string) {
     return (statements[id] ??= {
+      parse: 0,
       analysis: 0,
       analysisCount: 0,
       graph: 0,
@@ -216,6 +220,39 @@ export function createWorkerProfiler(
         stat.isError = state.error !== undefined;
       }
       endPhase();
+    },
+
+    /**
+     * Desmos's pass after the main analysis, which compiles click handlers
+     * and parametric domains one statement at a time. Counted as compile time
+     * of the statement, but not as another compile.
+     */
+    beginPostAnalysis(id: string) {
+      if (!flags.enabled) return;
+      beginPhase(id, "compile");
+    },
+
+    endPostAnalysis(id: string) {
+      if (!flags.enabled || current !== id) {
+        endPhase();
+        return;
+      }
+      statement(id).analysis += now() - phaseStart;
+      endPhase();
+    },
+
+    // ---- parsing (called per statement, before analysis) ----
+
+    beginParse(id: string) {
+      if (!flags.enabled) return;
+      parsing = id;
+      parseStart = now();
+    },
+
+    endParse(id: string) {
+      if (!flags.enabled || parsing !== id) return;
+      statement(id).parse += now() - parseStart;
+      parsing = undefined;
     },
 
     beginGraph(id: string) {
