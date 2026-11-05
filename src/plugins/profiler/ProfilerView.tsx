@@ -1,6 +1,13 @@
 import Profiler from ".";
 import "./ProfilerView.less";
-import { ExpressionRow, SourceRow, Summary } from "./aggregate";
+import {
+  ExpressionRow,
+  OVERVIEW_CATEGORIES,
+  OverviewCategory,
+  SourceRow,
+  Summary,
+} from "./aggregate";
+import { latexToText } from "./flame";
 import {
   SEGMENTS,
   Segment,
@@ -145,6 +152,7 @@ export class ProfilerView extends Component<{
   results() {
     return (
       <div class="dsm-profiler-results">
+        {this.overview()}
         <Button
           color="light-gray"
           class="dsm-profiler-open-flame"
@@ -164,9 +172,201 @@ export class ProfilerView extends Component<{
         <If predicate={() => this.p().tab === "definitions"}>
           {() => this.definitionsTab()}
         </If>
-        {this.unattributed()}
       </div>
     );
+  }
+
+  // ---- overview ----
+
+  overview() {
+    const o = () => this.summary().overview;
+    const categories = () =>
+      OVERVIEW_CATEGORIES.filter((c) => o().categories[c] > 0);
+    return (
+      <div class="dsm-profiler-overview">
+        <Tooltip
+          tooltip={format("profiler-overview-average-tooltip")}
+          gravity="s"
+        >
+          <div class="dsm-profiler-overview-head">
+            <span class="dsm-profiler-overview-label">
+              {format("profiler-overview-average")}
+            </span>
+            <span class="dsm-profiler-overview-value">
+              {() => formatMs(o().average)}
+            </span>
+            <span class="dsm-profiler-overview-frames">
+              {() => format("profiler-overview-frames", { count: o().frames })}
+            </span>
+          </div>
+        </Tooltip>
+        <div class="dsm-profiler-categories">
+          <For each={categories} key={(c: OverviewCategory) => c}>
+            {(c: () => OverviewCategory) => (
+              <Tooltip
+                tooltip={() => format(`profiler-segment-${c()}-tooltip`)}
+                gravity="s"
+              >
+                <span class="dsm-profiler-category">
+                  <span
+                    class={() => `dsm-profiler-swatch dsm-profiler-${c()}`}
+                  />
+                  <span class="dsm-profiler-category-name">
+                    {() => format(`profiler-segment-${c()}`)}
+                  </span>
+                  <span class="dsm-profiler-category-time">
+                    {() => formatMs(o().categories[c()])}
+                  </span>
+                </span>
+              </Tooltip>
+            )}
+          </For>
+          <If predicate={() => this.summary().gpuTimer && this.p().gpuTiming}>
+            {() => (
+              <Tooltip
+                tooltip={format("profiler-segment-gpu-tooltip")}
+                gravity="s"
+              >
+                <span class="dsm-profiler-category">
+                  <span class="dsm-profiler-swatch dsm-profiler-gpu" />
+                  <span class="dsm-profiler-category-name">
+                    {format("profiler-segment-gpu")}
+                  </span>
+                </span>
+              </Tooltip>
+            )}
+          </If>
+        </div>
+        <div
+          class="dsm-profiler-overview-bar"
+          onMount={(el: HTMLElement) => this.attachOverviewBar(el)}
+        >
+          <For
+            each={() => this.overviewSegments()}
+            key={(seg: OverviewSegment) => seg.key}
+          >
+            {(seg: () => OverviewSegment) => (
+              <span
+                class={() => ({
+                  "dsm-profiler-overview-segment": true,
+                  [`dsm-profiler-${seg().category}`]: true,
+                  "dsm-profiler-hovered": seg().key === this.hoveredSegment,
+                })}
+                style={() => ({
+                  left: `${seg().left}%`,
+                  width: `${seg().width}%`,
+                })}
+                onTap={() => {
+                  const { id } = seg();
+                  if (id !== undefined) this.p().jumpTo(id);
+                }}
+              />
+            )}
+          </For>
+        </div>
+        <div class="dsm-profiler-overview-caption">
+          {() => this.overviewCaption()}
+        </div>
+      </div>
+    );
+  }
+
+  /** Key of the overview segment under the mouse. */
+  hoveredSegment: string | undefined = undefined;
+
+  /**
+   * Segments sit side by side with no wrapper per segment, so track the
+   * hovered one from the mouse position rather than with a tooltip each.
+   */
+  attachOverviewBar(el: HTMLElement) {
+    const hover = (key: string | undefined) => {
+      if (key === this.hoveredSegment) return;
+      this.hoveredSegment = key;
+      this.p().refreshMenu();
+    };
+    el.addEventListener("mousemove", (e) => {
+      const rect = el.getBoundingClientRect();
+      const x = (100 * (e.clientX - rect.left)) / rect.width;
+      const seg = this.overviewSegments().find(
+        (s) => x >= s.left && x < s.left + s.width
+      );
+      hover(seg?.key);
+    });
+    el.addEventListener("mouseleave", () => hover(undefined));
+  }
+
+  overviewCaption() {
+    const seg = this.overviewSegments().find(
+      (s) => s.key === this.hoveredSegment
+    );
+    return seg?.tooltip ?? format("profiler-overview-hint");
+  }
+
+  /** Expressions by total time, as in the flame graph grouped by expression. */
+  overviewSegments(): OverviewSegment[] {
+    const s = this.summary();
+    const un = unattributedTotal(s);
+    const rows = s.expressions.filter((r) => r.total > 0);
+    const total = rows.reduce((a, r) => a + r.total, 0) + un;
+    if (total <= 0) return [];
+    const pct = (v: number) => `${((100 * v) / total).toFixed(1)}%`;
+    const out: OverviewSegment[] = [];
+    let left = 0;
+    const push = (seg: Omit<OverviewSegment, "left" | "width">) => {
+      const width = (100 * seg.value) / total;
+      out.push({ ...seg, left, width });
+      left += width;
+    };
+    let rest = 0;
+    let restCount = 0;
+    for (const r of [...rows].sort((a, b) => b.total - a.total)) {
+      if (r.total / total < MIN_OVERVIEW_SHARE) {
+        rest += r.total;
+        restCount++;
+        continue;
+      }
+      const category = majorityCategory(r);
+      push({
+        key: r.id,
+        id: r.id,
+        value: r.total,
+        category,
+        tooltip: format("profiler-overview-segment", {
+          name: this.expressionText(r.id),
+          duration: formatMs(r.total),
+          percent: pct(r.total),
+          category: format(`profiler-segment-${category}`),
+        }),
+      });
+    }
+    if (restCount > 0)
+      push({
+        key: "(rest)",
+        value: rest,
+        category: "rest",
+        tooltip: format("profiler-overview-rest", {
+          count: restCount,
+          duration: formatMs(rest),
+          percent: pct(rest),
+        }),
+      });
+    if (un > 0)
+      push({
+        key: "(unattributed)",
+        value: un,
+        category: "other",
+        tooltip: `${unattributedText(s)} (${pct(un)})`,
+      });
+    return out;
+  }
+
+  /** Short plain-text name of an expression, for tooltips. */
+  expressionText(id: string) {
+    const n = this.p().expressionNumber(id);
+    const latex = this.p().expressionLatex(id);
+    let text = latex === undefined ? "" : latexToText(latex);
+    if (text.length > 40) text = text.slice(0, 39) + "…";
+    return n === undefined ? text || id : `${n}: ${text}`;
   }
 
   // ---- expressions tab ----
@@ -180,10 +380,9 @@ export class ProfilerView extends Component<{
     const visible = () =>
       this.p().showAll ? rows() : rows().slice(0, COLLAPSED_ROWS);
     const max = () =>
-      Math.max(0, ...rows().map((r) => Math.max(r.total, r.gpu)));
+      Math.max(0, ...rows().map((r) => Math.max(r.median, r.gpu * scale(r))));
     return (
       <div class="dsm-profiler-tab">
-        {this.legend()}
         <If predicate={() => rows().length === 0}>
           {() => (
             <div class="dsm-profiler-empty">
@@ -197,41 +396,6 @@ export class ProfilerView extends Component<{
           </For>
         </div>
         {this.showAllToggle(() => rows().length)}
-      </div>
-    );
-  }
-
-  legend() {
-    return (
-      <div class="dsm-profiler-legend">
-        <For each={() => [...SEGMENTS]} key={(s: Segment) => s}>
-          {(seg: () => Segment) => (
-            <Tooltip
-              tooltip={() => format(`profiler-segment-${seg()}-tooltip`)}
-              gravity="s"
-            >
-              <span class="dsm-profiler-legend-item">
-                <span
-                  class={() => `dsm-profiler-swatch dsm-profiler-${seg()}`}
-                />
-                {() => format(`profiler-segment-${seg()}`)}
-              </span>
-            </Tooltip>
-          )}
-        </For>
-        <If predicate={() => this.summary().gpuTimer && this.p().gpuTiming}>
-          {() => (
-            <Tooltip
-              tooltip={format("profiler-segment-gpu-tooltip")}
-              gravity="s"
-            >
-              <span class="dsm-profiler-legend-item">
-                <span class="dsm-profiler-swatch dsm-profiler-gpu" />
-                {format("profiler-segment-gpu")}
-              </span>
-            </Tooltip>
-          )}
-        </If>
       </div>
     );
   }
@@ -255,9 +419,11 @@ export class ProfilerView extends Component<{
             () => this.p().expressionLatex(row().id),
             () => row().id
           )}
-          <span class="dsm-profiler-row-time">
-            {() => formatMs(row().total)}
-          </span>
+          <Tooltip tooltip={format("profiler-row-time-tooltip")} gravity="w">
+            <span class="dsm-profiler-row-time">
+              {() => formatMs(row().median)}
+            </span>
+          </Tooltip>
         </div>
         <Tooltip tooltip={() => this.breakdownTooltip(row())} gravity="s">
           <div class="dsm-profiler-bar">
@@ -266,7 +432,10 @@ export class ProfilerView extends Component<{
                 <span
                   class={() => `dsm-profiler-bar-segment dsm-profiler-${seg()}`}
                   style={() => ({
-                    width: `${barPercent(segmentsOf(row())[seg()], max())}%`,
+                    width: `${barPercent(
+                      segmentsOf(row())[seg()] * scale(row()),
+                      max()
+                    )}%`,
                   })}
                 />
               )}
@@ -278,7 +447,9 @@ export class ProfilerView extends Component<{
             <div class="dsm-profiler-bar dsm-profiler-bar-gpu">
               <span
                 class="dsm-profiler-bar-segment dsm-profiler-gpu"
-                style={() => ({ width: `${barPercent(row().gpu, max())}%` })}
+                style={() => ({
+                  width: `${barPercent(row().gpu * scale(row()), max())}%`,
+                })}
               />
             </div>
           )}
@@ -316,7 +487,12 @@ export class ProfilerView extends Component<{
   }
 
   badges(row: ExpressionRow) {
-    const out: string[] = [];
+    const out: string[] = [
+      format("profiler-row-stats", {
+        count: row.samples,
+        total: formatMs(row.total),
+      }),
+    ];
     if (row.links > 0)
       out.push(format("profiler-badge-shader-compiles", { count: row.links }));
     if (row.shaderBlock > 0)
@@ -453,16 +629,6 @@ export class ProfilerView extends Component<{
       </If>
     );
   }
-
-  unattributed() {
-    return (
-      <Tooltip tooltip={format("profiler-unattributed-tooltip")} gravity="n">
-        <div class="dsm-profiler-unattributed">
-          {() => unattributedText(this.summary())}
-        </div>
-      </Tooltip>
-    );
-  }
 }
 
 function unattributedText(s: Summary) {
@@ -471,6 +637,10 @@ function unattributedText(s: Summary) {
     `${format("profiler-segment-graph")} ${formatMs(s.overhead.graph)}`,
     `${format("profiler-other")} ${formatMs(s.overhead.other)}`,
   ];
+  if (s.overhead.render > 0)
+    parts.push(
+      `${format("profiler-segment-draw")} ${formatMs(s.overhead.render)}`
+    );
   if (s.unattributed3D) {
     parts.push(`${format("profiler-3d")} ${formatMs(s.unattributed3D.total)}`);
     if (s.unattributed3D.gpu > 0)
@@ -478,7 +648,42 @@ function unattributedText(s: Summary) {
         `${format("profiler-segment-gpu")} ${formatMs(s.unattributed3D.gpu)}`
       );
   }
-  return `${format("profiler-unattributed")}: ${parts.join(" · ")}`;
+  return `${format("profiler-unattributed")}: ${formatMs(
+    unattributedTotal(s)
+  )} (${parts.join(" · ")})`;
+}
+
+/** All CPU time not tied to any expression; matches the flame graph. */
+function unattributedTotal(s: Summary) {
+  const o = s.overhead;
+  return (
+    o.analysis + o.graph + o.other + o.render + (s.unattributed3D?.total ?? 0)
+  );
+}
+
+/** Expressions smaller than this share of the total are merged in the overview. */
+const MIN_OVERVIEW_SHARE = 0.005;
+
+interface OverviewSegment {
+  key: string;
+  id?: string;
+  value: number;
+  category: Segment | "other" | "rest";
+  tooltip: string;
+  /** Position and width, in percent of the bar. */
+  left: number;
+  width: number;
+}
+
+/** The category an expression spends most of its time in. */
+function majorityCategory(row: ExpressionRow): Segment {
+  const seg = segmentsOf(row);
+  return SEGMENTS.reduce((best, s) => (seg[s] > seg[best] ? s : best));
+}
+
+/** Scales an expression's totals down to its median frame. */
+function scale(row: ExpressionRow) {
+  return row.total > 0 ? row.median / row.total : 0;
 }
 
 export function MainPopupFunc(profiler: Profiler): ProfilerView {

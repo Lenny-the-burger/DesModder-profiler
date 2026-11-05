@@ -271,6 +271,25 @@ profiler-segment-draw = Draw
 profiler-segment-draw-tooltip = Drawing the plot on screen (CPU time)
 profiler-segment-shader = Shaders
 profiler-segment-shader-tooltip = Setting up 3D shaders, mostly waiting for new shaders to compile
+profiler-segment-other = Other
+profiler-segment-other-tooltip = Other work Desmos does each frame, such as updating labels and expression statuses
+profiler-overview-average = Average frame
+profiler-overview-frames = { $count ->
+    [one] over 1 frame
+   *[other] over { $count } frames
+}
+profiler-overview-average-tooltip = CPU time per frame, added up across Desmos's threads. A frame is one update of the graph and the redraw that follows it.
+profiler-overview-hint = Each block is one expression, colored by where most of its time goes. Hover to see it, click to go to it.
+profiler-overview-segment = { $name } · { $duration } ({ $percent }) · mostly { $category }
+profiler-overview-rest = { $count ->
+    [one] 1 smaller expression
+   *[other] { $count } smaller expressions
+} · { $duration } ({ $percent })
+profiler-row-stats = median of { $count ->
+    [one] 1 frame
+   *[other] { $count } frames
+} · { $total } total
+profiler-row-time-tooltip = Median time per frame in which this expression did work
 profiler-segment-gpu = GPU
 profiler-segment-gpu-tooltip = Time the GPU spent drawing (runs alongside the CPU)
 profiler-no-expressions = Nothing measurable was recorded for any expression.
@@ -297,7 +316,6 @@ profiler-wackscope-tooltip = Errors on its own, but works inside other expressio
 profiler-show-all = Show all { $count }
 profiler-show-less = Show less
 profiler-unattributed = Not tied to an expression
-profiler-unattributed-tooltip = Work Desmos does for the whole graph, such as setting up compilation, labels, intersections, axes, and 3D post-processing
 profiler-other = Other
 profiler-3d = 3D
 profiler-open-flame = Open flame graph

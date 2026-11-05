@@ -52,6 +52,7 @@ export type VanillaDispatchedEvent =
         | "set-none-selected"
         | "toggle-graph-settings"
         | "clear-unsaved-changes"
+        | "set-blank"
         | "undo"
         | "tick"
         | "redo"

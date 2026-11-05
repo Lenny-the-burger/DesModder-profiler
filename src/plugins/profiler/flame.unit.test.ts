@@ -88,7 +88,8 @@ const rec: Recording = {
       },
     },
   ],
-  sketches: {},
+  redraws: [],
+  updates: [],
 };
 const summary = summarize(rec, UNATTRIBUTED);
 const child = (n: FlameNode, key: string) =>

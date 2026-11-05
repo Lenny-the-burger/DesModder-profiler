@@ -237,7 +237,7 @@ export function buildFlameTree(
       parse: 0,
       compile: summary.overhead.analysis,
       graph: summary.overhead.graph,
-      draw: un3d?.cpuDraw ?? 0,
+      draw: (un3d?.cpuDraw ?? 0) + summary.overhead.render,
       shader: un3d?.setProgram ?? 0,
     };
     root = {
@@ -333,7 +333,7 @@ export function buildFlameTree(
               "draw",
               labels.phase("draw"),
               "draw",
-              un3d?.cpuDraw ?? 0
+              (un3d?.cpuDraw ?? 0) + summary.overhead.render
             ),
             overheadLeaf(
               "shader",

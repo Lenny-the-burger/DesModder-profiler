@@ -128,7 +128,12 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 34px;
+  // Fixed, so hovering between plain-text and rendered-math rows doesn't
+  // make the panel jump.
+  flex: none;
+  box-sizing: border-box;
+  height: 64px;
+  overflow: hidden;
   padding: 8px 14px;
   border-top: 1px solid #e2e2e2;
   font-size: 13px;
@@ -149,7 +154,8 @@
     align-items: center;
     gap: 8px;
     max-width: 60%;
-    max-height: 64px;
+    max-height: 48px;
+    overflow: hidden;
     font-weight: normal;
     font-size: 15px;
     // Fade long expressions out instead of hard-clipping them.

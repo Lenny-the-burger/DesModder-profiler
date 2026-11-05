@@ -1,4 +1,10 @@
-import { Recording, summarize } from "./aggregate";
+import {
+  Recording,
+  addToTimeline,
+  emptyRecording,
+  median,
+  summarize,
+} from "./aggregate";
 import { CallNode, CallTree, StatementStat, UNATTRIBUTED } from "./types";
 
 function stmt(partial: Partial<StatementStat>): StatementStat {
@@ -94,11 +100,12 @@ describe("summarize", () => {
         },
       },
     ],
-    sketches: { "2": { ms: 1.5, count: 3 } },
+    redraws: [{ "2": 1.5 }],
+    updates: [],
   };
   const s = summarize(rec, UNATTRIBUTED);
 
-  test("rows by expression, sorted by total", () => {
+  test("rows by expression, sorted by median", () => {
     expect(s.expressions.map((r) => r.id)).toEqual(["3", "2", "1"]);
     expect(s.expressions[0]).toMatchObject({
       analysis: 2,
@@ -118,7 +125,7 @@ describe("summarize", () => {
   });
 
   test("overhead is what per-statement rows don't cover", () => {
-    expect(s.overhead).toEqual({ analysis: 3, graph: 1, other: 4 });
+    expect(s.overhead).toEqual({ analysis: 3, graph: 1, other: 4, render: 0 });
   });
 
   test("sources are summed across expressions", () => {
@@ -156,10 +163,84 @@ describe("summarize", () => {
           },
         ],
         frames: [],
-        sketches: {},
+        redraws: [],
+        updates: [],
       },
       UNATTRIBUTED
     );
     expect(only.sources[0].wackscope).toBe(false);
+  });
+});
+
+describe("frames", () => {
+  test("a redraw joins the frame of the change set before it", () => {
+    const rec = emptyRecording();
+    addToTimeline(rec, "changeSet", 0);
+    addToTimeline(rec, "frame", 0);
+    // Another redraw (rotating the view) is a frame of its own.
+    addToTimeline(rec, "frame", 1);
+    addToTimeline(rec, "changeSet", 1);
+    addToTimeline(rec, "changeSet", 2);
+    addToTimeline(rec, "redraw", 0);
+    expect(rec.updates).toEqual([
+      { changeSet: 0, frame: 0 },
+      { frame: 1 },
+      { changeSet: 1 },
+      { changeSet: 2, redraw: 0 },
+    ]);
+  });
+
+  test("median", () => {
+    expect(median([])).toBe(0);
+    expect(median([5, 1, 3])).toBe(3);
+    expect(median([4, 1, 3, 2])).toBe(2.5);
+  });
+
+  test("overview averages per frame, and medians per expression", () => {
+    const changeSet = (analysis: number) => ({
+      updateAnalysis: analysis + 1,
+      graphAllChanges: 0,
+      timeInWorker: analysis + 3,
+      profile: { statements: { "1": stmt({ analysis, parse: 1 }) } },
+    });
+    const frame = (cpuDraw: number, durationCPU: number) => ({
+      gpuTimer: false,
+      durationCPU,
+      objects: {
+        "1": {
+          draws: 1,
+          cpuDraw,
+          gpu: 0,
+          gpuSamples: 0,
+          setProgram: 0,
+          block: 0,
+          links: 0,
+        },
+      },
+    });
+    const rec: Recording = {
+      ...emptyRecording(),
+      changeSets: [changeSet(2), changeSet(10)],
+      frames: [frame(1, 2), frame(1, 2), frame(1, 2)],
+      updates: [
+        { changeSet: 0, frame: 0 },
+        { changeSet: 1, frame: 1 },
+        { frame: 2 },
+      ],
+    };
+    const s = summarize(rec, UNATTRIBUTED);
+    // Frames: 1+2+1 parse+analysis+draw = 4, 1+10+1 = 12, then 1 draw only.
+    expect(s.expressions[0]).toMatchObject({ median: 4, samples: 3 });
+    expect(s.overview.frames).toBe(3);
+    const c = s.overview.categories;
+    expect(c.parse).toBeCloseTo(2 / 3);
+    expect(c.compile).toBeCloseTo((3 + 11) / 3);
+    expect(c.other).toBeCloseTo(2 / 3);
+    // Draw includes 3D frame time outside any draw call.
+    expect(c.draw).toBeCloseTo(2);
+    expect(s.overhead.render).toBeCloseTo(3);
+    expect(s.overview.average).toBeCloseTo(
+      Object.values(c).reduce((a, b) => a + b, 0)
+    );
   });
 });

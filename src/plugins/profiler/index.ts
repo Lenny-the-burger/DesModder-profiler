@@ -1,7 +1,14 @@
 import { PluginController } from "../PluginController";
 import { FlameGraphController } from "./FlameGraph";
 import { MainPopupFunc } from "./ProfilerView";
-import { Recording, Summary, emptyRecording, summarize } from "./aggregate";
+import {
+  Recording,
+  Redraw,
+  Summary,
+  addToTimeline,
+  emptyRecording,
+  summarize,
+} from "./aggregate";
 import {
   ChangeSetProfile,
   FrameProfile,
@@ -67,6 +74,14 @@ export default class Profiler extends PluginController {
     this.dispatchListenerID = this.cc.dispatcher.register((e) => {
       if (e.type === "on-evaluator-changes") {
         this.onEvaluatorChanges(e);
+      } else if (e.type === "set-blank") {
+        this.onGraphLoaded();
+      } else if (e.type === "set-state") {
+        const opts = e.opts as
+          | { fromTextMode?: boolean; dsmProfilerReload?: boolean }
+          | undefined;
+        if (!opts?.fromTextMode && !opts?.dsmProfilerReload)
+          this.onGraphLoaded();
       }
     });
   }
@@ -83,14 +98,31 @@ export default class Profiler extends PluginController {
     const profile = (e.timingData as { dsmProfile?: ChangeSetProfile })
       .dsmProfile;
     if (!this.recording || !profile) return;
-    this.profile.changeSets.push({
-      profile,
-      updateAnalysis: e.timingData.updateAnalysis,
-      graphAllChanges: e.timingData.graphAllChanges,
-      timeInWorker: e.timingData.timeInWorker,
-    });
+    const index =
+      this.profile.changeSets.push({
+        profile,
+        updateAnalysis: e.timingData.updateAnalysis,
+        graphAllChanges: e.timingData.graphAllChanges,
+        timeInWorker: e.timingData.timeInWorker,
+      }) - 1;
+    addToTimeline(this.profile, "changeSet", index);
     this.cachedSummary = undefined;
     this.releaseHold?.();
+  }
+
+  /**
+   * A different graph was opened (or the graph was replaced). The old
+   * results no longer describe it, so drop them. A recording in progress
+   * keeps going, so it captures the new graph's load.
+   */
+  onGraphLoaded() {
+    this.profile = emptyRecording();
+    this.currentRedraw = undefined;
+    this.cachedSummary = undefined;
+    if (this.recording) this.recordingStart = performance.now();
+    else this.recordingStart = this.recordingEnd = 0;
+    this.flameGraph.close();
+    this.cc.updateViews();
   }
 
   /** Sent to the worker with every message (see profiler.replacements). */
@@ -144,7 +176,10 @@ export default class Profiler extends PluginController {
     this.startRecording();
     this.holdMenuOpenDuringLoad();
     const oldUnsavedChanges = this.cc._hasUnsavedChanges;
-    this.calc.setState(this.calc.getState(), { allowUndo: true });
+    // Desmos passes the options through to the dispatched `set-state`
+    // event, which is how `onGraphLoaded` knows not to wipe this recording.
+    const opts = { allowUndo: true, dsmProfilerReload: true };
+    this.calc.setState(this.calc.getState(), opts);
     this.cc._hasUnsavedChanges = oldUnsavedChanges;
   }
 
@@ -174,6 +209,11 @@ export default class Profiler extends PluginController {
     this.releaseHold = () => setTimeout(release, HOLD_OPEN_SETTLE_MS);
   }
 
+  /** Re-render just the profiler menu (cheaper than updating every view). */
+  refreshMenu() {
+    this.dsm.pillboxMenus?.updateMenuView();
+  }
+
   isPinned() {
     return this.dsm.pillboxMenus?.pillboxMenuPinned ?? false;
   }
@@ -194,9 +234,7 @@ export default class Profiler extends PluginController {
   hasData() {
     const p = this.profile;
     return (
-      p.changeSets.length > 0 ||
-      p.frames.length > 0 ||
-      Object.keys(p.sketches).length > 0
+      p.changeSets.length > 0 || p.frames.length > 0 || p.redraws.length > 0
     );
   }
 
@@ -236,21 +274,47 @@ export default class Profiler extends PluginController {
     try {
       return draw();
     } finally {
-      const t = (this.profile.sketches[sketch.id] ??= { ms: 0, count: 0 });
-      t.ms += performance.now() - start;
-      t.count++;
+      const redraw = this.redrawInProgress();
+      redraw[sketch.id] = (redraw[sketch.id] ?? 0) + performance.now() - start;
       this.cachedSummary = undefined;
     }
   }
 
+  private currentRedraw: Redraw | undefined;
+
+  /**
+   * The 2D redraw the current sketch draw belongs to. Desmos draws every
+   * sketch of a redraw synchronously, so a redraw ends at the next microtask.
+   */
+  private redrawInProgress(): Redraw {
+    if (this.currentRedraw) return this.currentRedraw;
+    const redraw: Redraw = {};
+    this.currentRedraw = redraw;
+    queueMicrotask(() => {
+      if (this.currentRedraw === redraw) this.currentRedraw = undefined;
+    });
+    if (this.profile.redraws.length < MAX_FRAMES) {
+      const index = this.profile.redraws.push(redraw) - 1;
+      addToTimeline(this.profile, "redraw", index);
+    }
+    return redraw;
+  }
+
   /** Called with each 3D redraw result from the worker. */
   onRedraw3dResult(
-    payload: { lastRenderInfo?: { dsmProfile?: FrameProfile } } | undefined
+    payload:
+      | {
+          lastRenderInfo?: { dsmProfile?: FrameProfile; durationCPU?: number };
+        }
+      | undefined
   ) {
-    const frame = payload?.lastRenderInfo?.dsmProfile;
+    const info = payload?.lastRenderInfo;
+    const frame = info?.dsmProfile;
     if (!this.recording || !frame) return;
     if (this.profile.frames.length >= MAX_FRAMES) return;
-    this.profile.frames.push(frame);
+    const index =
+      this.profile.frames.push({ ...frame, durationCPU: info.durationCPU }) - 1;
+    addToTimeline(this.profile, "frame", index);
     this.cachedSummary = undefined;
   }
 

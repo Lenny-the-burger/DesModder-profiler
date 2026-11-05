@@ -5,6 +5,8 @@
 @draw: #fa7e19;
 @shader: #6042a6;
 @gpu: #c74440;
+@other: #9a9a9a;
+@rest: #c8ccd2;
 
 // The pillbox popover is a fixed 290px; the rows need a bit more room.
 .dsm-pillbox-popover:has(.dsm-profiler-menu) {
@@ -30,6 +32,103 @@
   }
   .dsm-profiler-gpu {
     background: @gpu;
+  }
+  .dsm-profiler-other {
+    background: @other;
+  }
+  .dsm-profiler-rest {
+    background: @rest;
+  }
+
+  .dsm-profiler-overview {
+    margin: 8px 0 10px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.035);
+  }
+
+  .dsm-profiler-overview-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    cursor: default;
+  }
+
+  .dsm-profiler-overview-label {
+    font-size: 13px;
+    color: #444;
+  }
+
+  .dsm-profiler-overview-value {
+    font-size: 20px;
+    font-variant-numeric: tabular-nums;
+    color: #222;
+  }
+
+  .dsm-profiler-overview-frames {
+    margin-left: auto;
+    font-size: 11px;
+    color: #777;
+  }
+
+  // Fixed height, so hovering doesn't make the menu jump.
+  .dsm-profiler-overview-caption {
+    height: 2.6em;
+    margin-top: 4px;
+    overflow: hidden;
+    font-size: 11px;
+    line-height: 1.3;
+    color: #555;
+  }
+
+  .dsm-profiler-categories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 12px;
+    margin: 4px 0 8px;
+    font-size: 12px;
+  }
+
+  .dsm-profiler-category {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: default;
+  }
+
+  .dsm-profiler-category-name {
+    color: #444;
+  }
+
+  .dsm-profiler-category-time {
+    font-variant-numeric: tabular-nums;
+    color: #222;
+  }
+
+  .dsm-profiler-overview-bar {
+    position: relative;
+    height: 14px;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.06);
+    overflow: hidden;
+  }
+
+  .dsm-profiler-overview-segment {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    cursor: pointer;
+    // A thin gap between neighbouring expressions.
+    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.85);
+
+    &.dsm-profiler-hovered {
+      filter: brightness(1.2);
+    }
+
+    &.dsm-profiler-other,
+    &.dsm-profiler-rest {
+      cursor: default;
+    }
   }
 
   .dsm-profiler-title-row {
@@ -242,14 +341,6 @@
     &:hover {
       text-decoration: underline;
     }
-  }
-
-  .dsm-profiler-unattributed {
-    margin-top: 8px;
-    padding-top: 6px;
-    border-top: 1px solid rgba(0, 0, 0, 0.1);
-    font-size: 11px;
-    color: #777;
   }
 }
 
