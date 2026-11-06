@@ -16,6 +16,7 @@ import {
   UNATTRIBUTED,
 } from "./types";
 import { DispatchedEvent } from "#globals";
+import { ConfigItem } from "#plugins/index.ts";
 
 /** Upper bound on stored 3D frames, so a long recording can't grow forever. */
 const MAX_FRAMES = 20000;
@@ -28,6 +29,11 @@ const HOLD_OPEN_MAX_MS = 20000;
 
 export type ProfilerTab = "expressions" | "definitions";
 
+interface ProfilerSettings {
+  nodeBreakdown: boolean;
+  gpuTiming: boolean;
+}
+
 /**
  * Per-expression profiler: worker compile and graph time, 2D canvas drawing,
  * and 3D draws, GPU time, and shader compiles, attributed to expressions and
@@ -36,21 +42,30 @@ export type ProfilerTab = "expressions" | "definitions";
  * The worker side lives in `worker.ts` and is hooked in by
  * `profiler.replacements`.
  */
-export default class Profiler extends PluginController {
+export default class Profiler extends PluginController<ProfilerSettings> {
   static id = "profiler" as const;
   static enabledByDefault = false;
+  static config = [
+    { type: "boolean", default: true, key: "nodeBreakdown" },
+    { type: "boolean", default: true, key: "gpuTiming" },
+  ] satisfies readonly ConfigItem[];
 
   dispatchListenerID!: string;
 
   /** Whether the profiler is recording. */
   recording = false;
   /** Use GPU timer queries for 3D draws. Adds a query per draw call. */
-  gpuTiming = false;
+  get gpuTiming() {
+    return this.settings.gpuTiming;
+  }
+
   /**
-   * Break expressions down into their pieces while compiling. Off by default:
-   * it times every parse node, which slows compiling down noticeably.
+   * Break expressions down into their pieces while compiling. Times every
+   * parse node, which slows compiling down noticeably while recording.
    */
-  nodeBreakdown = false;
+  get nodeBreakdown() {
+    return this.settings.nodeBreakdown;
+  }
   profile: Recording = emptyRecording();
   /** performance.now() when the current or last recording started/stopped. */
   recordingStart = 0;
@@ -70,6 +85,8 @@ export default class Profiler extends PluginController {
       tooltip: "profiler-name",
       iconClass: "dsm-icon-pie-chart",
       popup: () => MainPopupFunc(this),
+      // Reopening the menu is how you get back to the results.
+      onOpen: () => this.stopRecording(),
     });
     this.dispatchListenerID = this.cc.dispatcher.register((e) => {
       if (e.type === "on-evaluator-changes") {
@@ -167,8 +184,14 @@ export default class Profiler extends PluginController {
   }
 
   toggleRecording() {
-    if (this.recording) this.stopRecording();
-    else this.startRecording();
+    if (this.recording) {
+      this.stopRecording();
+      return;
+    }
+    this.startRecording();
+    // Get out of the way while recording, unless pinned open. Opening the
+    // menu again stops the recording.
+    this.dsm.pillboxMenus?.closeMenu();
   }
 
   /** Start recording, then reload the graph to profile a cold load. */
@@ -240,16 +263,6 @@ export default class Profiler extends PluginController {
 
   openFlameGraph() {
     this.flameGraph.open();
-  }
-
-  setNodeBreakdown(nodes: boolean) {
-    this.nodeBreakdown = nodes;
-    this.cc.updateViews();
-  }
-
-  setGpuTiming(gpu: boolean) {
-    this.gpuTiming = gpu;
-    this.cc.updateViews();
   }
 
   setTab(tab: ProfilerTab) {

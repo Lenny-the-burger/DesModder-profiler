@@ -92,6 +92,7 @@ export default class PillboxMenus extends PluginController<undefined> {
 
   toggleMenu(id: string, isOpen: boolean) {
     if (isOpen) {
+      if (this.pillboxMenuOpen !== id) this.pillboxButtons[id]?.onOpen?.();
       this.pillboxMenuOpen = id;
     } else {
       if (this.pillboxMenuPinned && this.pillboxMenuOpen === id) {
@@ -183,4 +184,6 @@ interface PillboxButtonSpec {
   pinned?: boolean;
   // popup should return a JSX element. Not sure of type
   popup: (c: PillboxMenus) => unknown;
+  /** Called when the user opens this button's menu. */
+  onOpen?: () => void;
 }

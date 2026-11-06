@@ -301,18 +301,6 @@ class FlameGraphView extends Component<{ fg: () => FlameGraphController }> {
     return (
       <div class="dsm-flame-header">
         <div class="dsm-flame-title">{format("profiler-flame-title")}</div>
-        <If predicate={() => this.fg().hasGpuData()}>
-          {() => (
-            <div class="dsm-flame-segmented">
-              <SegmentedControl
-                names={() => METRICS.map((m) => format(`profiler-flame-${m}`))}
-                selectedIndex={() => METRICS.indexOf(this.fg().metric)}
-                setSelectedIndex={(i) => this.fg().setMetric(METRICS[i])}
-                ariaGroupLabel={format("profiler-flame-metric-label")}
-              />
-            </div>
-          )}
-        </If>
         <If predicate={() => this.fg().metric === "cpu"}>
           {() => (
             <div class="dsm-flame-segmented">
@@ -323,6 +311,18 @@ class FlameGraphView extends Component<{ fg: () => FlameGraphController }> {
                 selectedIndex={() => GROUPINGS.indexOf(this.fg().grouping)}
                 setSelectedIndex={(i) => this.fg().setGrouping(GROUPINGS[i])}
                 ariaGroupLabel={format("profiler-flame-group-label")}
+              />
+            </div>
+          )}
+        </If>
+        <If predicate={() => this.fg().hasGpuData()}>
+          {() => (
+            <div class="dsm-flame-segmented">
+              <SegmentedControl
+                names={() => METRICS.map((m) => format(`profiler-flame-${m}`))}
+                selectedIndex={() => METRICS.indexOf(this.fg().metric)}
+                setSelectedIndex={(i) => this.fg().setMetric(METRICS[i])}
+                ariaGroupLabel={format("profiler-flame-metric-label")}
               />
             </div>
           )}

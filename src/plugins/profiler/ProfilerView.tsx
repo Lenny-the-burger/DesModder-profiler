@@ -19,7 +19,6 @@ import {
 import { Component, jsx } from "#DCGView";
 import {
   Button,
-  Checkbox,
   For,
   IconButton,
   If,
@@ -105,28 +104,6 @@ export class ProfilerView extends Component<{
           </Tooltip>
         </div>
         <div class="dsm-profiler-status">{() => this.statusText()}</div>
-        <Tooltip tooltip={format("profiler-breakdown-tooltip")} gravity="s">
-          <Checkbox
-            checked={() => this.p().nodeBreakdown}
-            onChange={(checked) => this.p().setNodeBreakdown(checked)}
-            ariaLabel={() => format("profiler-breakdown")}
-          >
-            {() => format("profiler-breakdown")}
-          </Checkbox>
-        </Tooltip>
-        <If predicate={() => this.p().is3d()}>
-          {() => (
-            <Tooltip tooltip={format("profiler-gpu-tooltip")} gravity="s">
-              <Checkbox
-                checked={() => this.p().gpuTiming}
-                onChange={(checked) => this.p().setGpuTiming(checked)}
-                ariaLabel={() => format("profiler-gpu")}
-              >
-                {() => format("profiler-gpu")}
-              </Checkbox>
-            </Tooltip>
-          )}
-        </If>
       </div>
     );
   }

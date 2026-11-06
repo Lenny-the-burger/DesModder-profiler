@@ -21,10 +21,29 @@ describe("Profiler", () => {
     return clean;
   });
 
-  testWithPage("Record button switches to Stop while open", async (driver) => {
+  testWithPage("Record closes the menu; reopening stops", async (driver) => {
+    await driver.enablePlugin("profiler");
+    const recording = async () =>
+      await driver.evaluate(() => DSM.profiler!.recording);
+    await driver.click(BUTTON);
+    await driver.assertSelector(POPUP);
+    await driver.click(".dsm-profiler-record");
+    await driver.assertSelectorNot(POPUP);
+    expect(await recording()).toBe(true);
+    await driver.click(BUTTON);
+    await driver.assertSelector(POPUP);
+    expect(await recording()).toBe(false);
+
+    await driver.click(BUTTON);
+    await driver.clean();
+    return clean;
+  });
+
+  testWithPage("Pinned, Record switches to Stop", async (driver) => {
     await driver.enablePlugin("profiler");
     await driver.click(BUTTON);
     await driver.assertSelector(POPUP);
+    await driver.click(".dsm-profiler-pin");
     const label = async () =>
       await driver.$eval(".dsm-profiler-record", (e) =>
         (e as HTMLElement).innerText.trim()
@@ -36,9 +55,11 @@ describe("Profiler", () => {
         document.querySelector(".dsm-profiler-record")?.textContent?.trim() ===
         "Stop"
     );
+    await driver.assertSelector(POPUP);
     await driver.click(".dsm-profiler-record");
     expect(await label()).toBe("Record");
 
+    await driver.click(".dsm-profiler-pin");
     await driver.click(BUTTON);
     await driver.clean();
     return clean;
