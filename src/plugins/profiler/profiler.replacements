@@ -229,6 +229,73 @@ finalizeSurface($t) {
   self.dsm_profiler?.tagSurface($t);
 ```
 
+## Tag 3D ray-cast passes with their expression id
+
+Some 3D branches aren't meshes: Desmos draws them with a full-screen shader
+pass, which never goes through `finalizeSurface`. Remember the branch each
+planned pass belongs to, so its draws and shader compiles can be attributed.
+
+*Description* `Tag 3D ray-cast shader passes with their expression id`
+
+*worker_only*
+
+*Find* => `from`
+```js
+let $o = $e.rayCastPassCache.planShaderPass($e, $n);
+$t.push($o)
+```
+
+*Replace* `from` with
+```js
+let $o = $e.rayCastPassCache.planShaderPass($e, $n);
+self.dsm_profiler?.tagRayCastPlan($o, $e.rayCastBranches[$n]);
+$t.push($o)
+```
+
+## Attribute each 3D ray-cast pass render to its expression
+
+Passes can be shared between branches with identical shaders, so the pass's
+mesh is retagged right before each render rather than once.
+
+*Description* `Attribute 3D ray-cast shader pass renders to their expression`
+
+*worker_only*
+
+*Find* => `from`
+```js
+let { shaderPassId: $u, definition: $l } = $c, $p = $t.rayCastPassCache.compiledShaderPasses.get($u);
+```
+
+*Replace* `from` with
+```js
+let { shaderPassId: $u, definition: $l } = $c, $p = $t.rayCastPassCache.compiledShaderPasses.get($u);
+self.dsm_profiler?.tagRayCastPass($c, $p);
+```
+
+## Attribute 3D expression list icons to their expression
+
+Every expression in the list gets a small rendered icon, drawn with shared
+icon meshes and that expression's materials. Those materials include its color
+shader, so icons can trigger expensive shader compiles of their own.
+
+*Description* `Attribute 3D expression icon renders to their expression`
+
+*worker_only*
+
+*Find* => `from`
+```js
+this.setMaterials($y, $u[$h], $h), $l.setRenderTarget(this.renderTargets[$g]), $l.render($y.scene, $y.camera)
+```
+
+*Replace* `from` with
+```js
+this.setMaterials($y, $u[$h], $h),
+$l.setRenderTarget(this.renderTargets[$g]),
+self.dsm_profiler
+  ? self.dsm_profiler.withDrawObject($h, () => $l.render($y.scene, $y.camera))
+  : $l.render($y.scene, $y.camera)
+```
+
 ## Track which expression each 3D draw call belongs to
 
 *Description* `Track the expression of each 3D draw call`

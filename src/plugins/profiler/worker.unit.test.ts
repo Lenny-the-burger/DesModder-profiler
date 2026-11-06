@@ -191,6 +191,45 @@ describe("worker profiler", () => {
     expect(frame.objects["(unattributed)"].setProgram).toBe(1);
   });
 
+  test("attributes a shared ray-cast pass to each plan's expression", () => {
+    const { clock, p } = setup();
+    const mesh: { dsmId?: string } = {};
+    const pass = { fsTriangle: { mesh } };
+    const planA: { dsmId?: string } = {};
+    const planB: { dsmId?: string } = {};
+    p.tagRayCastPlan(planA, { branchId: "7:0" });
+    p.tagRayCastPlan(planB, { branchId: "8" });
+    for (const [plan, ms] of [
+      [planA, 3],
+      [planB, 2],
+    ] as const) {
+      p.tagRayCastPass(plan, pass);
+      p.setDrawObject(mesh);
+      p.timeSetProgram(() => clock.advance(ms));
+    }
+    const frame = p.drainFrame()!;
+    expect(frame.objects["7"].setProgram).toBe(3);
+    expect(frame.objects["8"].setProgram).toBe(2);
+    expect(frame.objects["(unattributed)"]).toBeUndefined();
+  });
+
+  test("forces draws inside withDrawObject onto one expression", () => {
+    const { clock, p } = setup();
+    const tagged = { dsmId: "3" };
+    p.withDrawObject("9", () => {
+      p.setDrawObject(tagged);
+      p.timeSetProgram(() => clock.advance(5));
+      p.setDrawObject({});
+      p.timeSetProgram(() => clock.advance(2));
+    });
+    p.setDrawObject({});
+    p.timeSetProgram(() => clock.advance(1));
+    const frame = p.drainFrame()!;
+    expect(frame.objects["9"].setProgram).toBe(7);
+    expect(frame.objects["3"]).toBeUndefined();
+    expect(frame.objects["(unattributed)"].setProgram).toBe(1);
+  });
+
   test("disabling drops partial data", () => {
     const { clock, p } = setup();
     p.beginAnalysis("1", "main");

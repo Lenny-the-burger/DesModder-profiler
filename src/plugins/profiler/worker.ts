@@ -124,6 +124,8 @@ export function createWorkerProfiler(
   // ---- 3D frame state ----
   let objects: Record<string, ObjectFrameStat> = {};
   let drawObject: string | undefined;
+  /** Expression that every draw belongs to, regardless of mesh tags. */
+  let forcedDrawObject: string | undefined;
   let gpuTimer = false;
   let pending: PendingQuery[] = [];
   const timerExts = new WeakMap<object, TimerExt | null>();
@@ -357,8 +359,45 @@ export function createWorkerProfiler(
       mesh.dsmId = arg.branchId.replace(/:\d+$/, "");
     },
 
+    /** Remember which expression a planned ray-cast pass draws (from `Mf`). */
+    tagRayCastPlan(
+      plan: { dsmId?: string } | undefined,
+      branch: { branchId?: unknown } | undefined
+    ) {
+      if (!plan || typeof branch?.branchId !== "string") return;
+      plan.dsmId = branch.branchId.replace(/:\d+$/, "");
+    },
+
+    /**
+     * Tag a ray-cast pass's mesh with the expression of the plan about to
+     * render it. Passes may be shared between expressions, so this happens
+     * before every render.
+     */
+    tagRayCastPass(
+      plan: { dsmId?: string } | undefined,
+      pass: { fsTriangle?: { mesh?: unknown } } | undefined
+    ) {
+      const mesh = pass?.fsTriangle?.mesh as { dsmId?: string } | undefined;
+      if (mesh) mesh.dsmId = plan?.dsmId;
+    },
+
     setDrawObject(object: { dsmId?: string } | null | undefined) {
-      drawObject = object?.dsmId;
+      drawObject = forcedDrawObject ?? object?.dsmId;
+    },
+
+    /**
+     * Attribute every draw inside `fn` to expression `id`. Used for work
+     * drawn with shared meshes, like the expression list icons.
+     */
+    withDrawObject<T>(id: unknown, fn: () => T): T {
+      if (typeof id !== "string") return fn();
+      const prev = forcedDrawObject;
+      forcedDrawObject = drawObject = id;
+      try {
+        return fn();
+      } finally {
+        forcedDrawObject = drawObject = prev;
+      }
     },
 
     timeSetProgram<T>(fn: () => T): T {
