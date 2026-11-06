@@ -5,7 +5,8 @@ import {
   FlameGrouping,
   FlameMetric,
   FlameNode,
-  buildFlameTree,
+  flameSource,
+  FlameSource,
   flameSelf,
   latexToText,
   matchedTime,
@@ -47,12 +48,8 @@ export class FlameGraphController {
   private mountPoint: HTMLElement | undefined;
   private view: MountedComponent | undefined;
   private canvas: FlameCanvas | undefined;
-  private tree: FlameNode | undefined;
-  private treeFor: { summary: Summary; grouping: string; metric: string } = {
-    summary: undefined as unknown as Summary,
-    grouping: "",
-    metric: "",
-  };
+  /** Trees of the current summary, kept so switching views is quick. */
+  private source: { summary: Summary; trees: FlameSource } | undefined;
 
   constructor(readonly profiler: Profiler) {}
 
@@ -113,39 +110,27 @@ export class FlameGraphController {
 
   getTree(): FlameNode {
     const summary = this.profiler.getSummary();
-    const f = this.treeFor;
-    if (
-      !this.tree ||
-      f.summary !== summary ||
-      f.grouping !== this.grouping ||
-      f.metric !== this.metric
-    ) {
-      this.tree = buildFlameTree(
-        this.profiler.profile,
-        summary,
-        { grouping: this.grouping, metric: this.metric },
-        {
-          root: (metric) => format(`profiler-flame-root-${metric}`),
-          phase: (phase) =>
-            format(
-              phase === "other"
-                ? "profiler-flame-other-worker"
-                : `profiler-segment-${phase}`
-            ),
-          expression: (id) => this.expressionName(id),
-          definition: (symbol, kind) =>
-            kind === "fn" ? `${symbolToText(symbol)}()` : symbolToText(symbol),
-          unattributed: format("profiler-unattributed"),
-          shaderWait: format("profiler-flame-shader-wait"),
-        }
-      );
-      this.treeFor = {
-        summary,
-        grouping: this.grouping,
-        metric: this.metric,
-      };
+    if (this.source?.summary !== summary) {
+      const trees = flameSource(this.profiler.profile, summary, {
+        root: (metric) => format(`profiler-flame-root-${metric}`),
+        phase: (phase) =>
+          format(
+            phase === "other"
+              ? "profiler-flame-other-worker"
+              : `profiler-segment-${phase}`
+          ),
+        expression: (id) => this.expressionName(id),
+        definition: (symbol, kind) =>
+          kind === "fn" ? `${symbolToText(symbol)}()` : symbolToText(symbol),
+        unattributed: format("profiler-unattributed"),
+        shaderWait: format("profiler-flame-shader-wait"),
+      });
+      this.source = { summary, trees };
     }
-    return this.tree;
+    return this.source.trees.tree({
+      grouping: this.grouping,
+      metric: this.metric,
+    });
   }
 
   private expressionName(id: string) {

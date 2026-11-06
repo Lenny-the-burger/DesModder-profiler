@@ -68,11 +68,17 @@ const PHASES: Phase[] = ["parse", "compile", "graph", "draw", "shader"];
 
 export { mergeCallTrees } from "./calltree";
 
-function finish(node: FlameNode): FlameNode {
+/**
+ * Drop empty children and sort the rest, largest first. Skips subtrees in
+ * `done`, which are shared between trees and already finished.
+ */
+function finish(node: FlameNode, done?: WeakSet<FlameNode>): FlameNode {
+  if (done?.has(node)) return node;
   node.children = node.children
     .filter((c) => c.value > 0)
-    .map(finish)
+    .map((c) => finish(c, done))
     .sort((a, b) => b.value - a.value);
+  done?.add(node);
   return node;
 }
 
@@ -81,12 +87,34 @@ function sumChildren(node: FlameNode): FlameNode {
   return node;
 }
 
+export interface FlameView {
+  grouping: FlameGrouping;
+  metric: FlameMetric;
+}
+
 export function buildFlameTree(
   rec: Recording,
   summary: Summary,
-  opts: { grouping: FlameGrouping; metric: FlameMetric },
+  opts: FlameView,
   labels: FlameLabels
 ): FlameNode {
+  return flameSource(rec, summary, labels).tree(opts);
+}
+
+/**
+ * The trees of one recording, one per view, built on first use. The views
+ * share the expensive part (merging call trees and turning them into nodes),
+ * so switching views after the first is cheap.
+ */
+export interface FlameSource {
+  tree: (view: FlameView) => FlameNode;
+}
+
+export function flameSource(
+  rec: Recording,
+  summary: Summary,
+  labels: FlameLabels
+): FlameSource {
   // Merge each statement's call trees across change sets.
   const compileCalls = new Map<string, CallTree>();
   const graphCalls = new Map<string, CallTree>();
@@ -101,6 +129,31 @@ export function buildFlameTree(
   const sourceInfo = new Map(
     summary.sources.map((s) => [`${s.kind}:${s.symbol}`, s])
   );
+  const rows = new Map(summary.expressions.map((r) => [r.id, r]));
+
+  // The same pieces show up across expressions and compiles.
+  const texts = new Map<string, string>();
+  const text = (latex: string) => {
+    let t = texts.get(latex);
+    if (t === undefined) texts.set(latex, (t = latexToText(latex)));
+    return t;
+  };
+
+  const finished = new WeakSet<FlameNode>();
+  // Call subtrees by phase and expression, shared by every view.
+  const callNodes = new Map<string, FlameNode[]>();
+  const callsOf = (category: "compile" | "graph", id: string) => {
+    const key = `${category}:${id}`;
+    let nodes = callNodes.get(key);
+    if (!nodes) {
+      const calls = (category === "compile" ? compileCalls : graphCalls).get(
+        id
+      );
+      nodes = callsToNodes(calls, category, id).map((n) => finish(n, finished));
+      callNodes.set(key, nodes);
+    }
+    return nodes;
+  };
 
   const callsToNodes = (
     tree: CallTree | undefined,
@@ -112,7 +165,7 @@ export function buildFlameTree(
       if (call.kind === "node")
         return {
           key,
-          name: latexToText(call.symbol),
+          name: text(call.symbol),
           kind: "subexpression",
           category,
           value: call.time,
@@ -145,7 +198,7 @@ export function buildFlameTree(
     name: string,
     kind: FlameNodeKind
   ): FlameNode | undefined => {
-    const row = summary.expressions.find((r) => r.id === id);
+    const row = rows.get(id);
     if (!row) return undefined;
     const base = { key, name, kind, category: phase, exprId: id };
     switch (phase) {
@@ -155,13 +208,13 @@ export function buildFlameTree(
         return {
           ...base,
           value: row.analysis,
-          children: callsToNodes(compileCalls.get(id), "compile", id),
+          children: callsOf("compile", id),
         };
       case "graph":
         return {
           ...base,
           value: row.graph,
-          children: callsToNodes(graphCalls.get(id), "graph", id),
+          children: callsOf("graph", id),
         };
       case "draw":
         return { ...base, value: row.canvas + row.cpuDraw, children: [] };
@@ -203,156 +256,169 @@ export function buildFlameTree(
   });
 
   const ids = summary.expressions.map((r) => r.id);
-  let root: FlameNode;
 
-  if (opts.metric === "gpu") {
-    root = {
-      key: "root",
-      name: labels.root("gpu"),
-      kind: "root",
-      category: "root",
-      value: 0,
-      children: [
-        ...summary.expressions.map(
-          (r): FlameNode => ({
-            key: r.id,
-            name: labels.expression(r.id),
-            kind: "expression",
-            category: "gpu",
-            value: r.gpu,
-            exprId: r.id,
-            children: [],
-          })
-        ),
-        overheadLeaf(
-          UNATTRIBUTED,
-          labels.unattributed,
-          "other",
-          un3d?.gpu ?? 0
-        ),
-      ],
-    };
-  } else if (opts.grouping === "phase") {
-    const overhead: Record<Phase, number> = {
-      parse: 0,
-      compile: summary.overhead.analysis,
-      graph: summary.overhead.graph,
-      draw: (un3d?.cpuDraw ?? 0) + summary.overhead.render,
-      shader: un3d?.setProgram ?? 0,
-    };
-    root = {
-      key: "root",
-      name: labels.root("cpu"),
-      kind: "root",
-      category: "root",
-      value: 0,
-      children: [
-        ...PHASES.map((phase) =>
-          sumChildren({
-            key: phase,
-            name: labels.phase(phase),
-            kind: "phase",
-            category: phase,
-            value: 0,
-            children: [
-              ...ids.flatMap(
-                (id) =>
+  const build = (opts: FlameView): FlameNode => {
+    let root: FlameNode;
+    if (opts.metric === "gpu") {
+      root = {
+        key: "root",
+        name: labels.root("gpu"),
+        kind: "root",
+        category: "root",
+        value: 0,
+        children: [
+          ...summary.expressions.map(
+            (r): FlameNode => ({
+              key: r.id,
+              name: labels.expression(r.id),
+              kind: "expression",
+              category: "gpu",
+              value: r.gpu,
+              exprId: r.id,
+              children: [],
+            })
+          ),
+          overheadLeaf(
+            UNATTRIBUTED,
+            labels.unattributed,
+            "other",
+            un3d?.gpu ?? 0
+          ),
+        ],
+      };
+    } else if (opts.grouping === "phase") {
+      const overhead: Record<Phase, number> = {
+        parse: 0,
+        compile: summary.overhead.analysis,
+        graph: summary.overhead.graph,
+        draw: (un3d?.cpuDraw ?? 0) + summary.overhead.render,
+        shader: un3d?.setProgram ?? 0,
+      };
+      root = {
+        key: "root",
+        name: labels.root("cpu"),
+        kind: "root",
+        category: "root",
+        value: 0,
+        children: [
+          ...PHASES.map((phase) =>
+            sumChildren({
+              key: phase,
+              name: labels.phase(phase),
+              kind: "phase",
+              category: phase,
+              value: 0,
+              children: [
+                ...ids.flatMap(
+                  (id) =>
+                    phaseOfExpression(
+                      phase,
+                      id,
+                      id,
+                      labels.expression(id),
+                      "expression"
+                    ) ?? []
+                ),
+                overheadLeaf(
+                  UNATTRIBUTED,
+                  labels.unattributed,
+                  "other",
+                  overhead[phase]
+                ),
+              ],
+            })
+          ),
+          overheadLeaf(
+            "other",
+            labels.phase("other"),
+            "other",
+            summary.overhead.other
+          ),
+        ],
+      };
+    } else {
+      root = {
+        key: "root",
+        name: labels.root("cpu"),
+        kind: "root",
+        category: "root",
+        value: 0,
+        children: [
+          ...ids.map((id) =>
+            sumChildren({
+              key: id,
+              name: labels.expression(id),
+              kind: "expression",
+              category: "expression",
+              value: 0,
+              exprId: id,
+              children: PHASES.flatMap(
+                (phase) =>
                   phaseOfExpression(
                     phase,
                     id,
-                    id,
-                    labels.expression(id),
-                    "expression"
+                    phase,
+                    labels.phase(phase),
+                    "phase"
                   ) ?? []
               ),
+            })
+          ),
+          sumChildren({
+            key: UNATTRIBUTED,
+            name: labels.unattributed,
+            kind: "overhead",
+            category: "other",
+            value: 0,
+            children: [
               overheadLeaf(
-                UNATTRIBUTED,
-                labels.unattributed,
+                "compile",
+                labels.phase("compile"),
+                "compile",
+                summary.overhead.analysis
+              ),
+              overheadLeaf(
+                "graph",
+                labels.phase("graph"),
+                "graph",
+                summary.overhead.graph
+              ),
+              overheadLeaf(
+                "draw",
+                labels.phase("draw"),
+                "draw",
+                (un3d?.cpuDraw ?? 0) + summary.overhead.render
+              ),
+              overheadLeaf(
+                "shader",
+                labels.phase("shader"),
+                "shader",
+                un3d?.setProgram ?? 0
+              ),
+              overheadLeaf(
                 "other",
-                overhead[phase]
+                labels.phase("other"),
+                "other",
+                summary.overhead.other
               ),
             ],
-          })
-        ),
-        overheadLeaf(
-          "other",
-          labels.phase("other"),
-          "other",
-          summary.overhead.other
-        ),
-      ],
-    };
-  } else {
-    root = {
-      key: "root",
-      name: labels.root("cpu"),
-      kind: "root",
-      category: "root",
-      value: 0,
-      children: [
-        ...ids.map((id) =>
-          sumChildren({
-            key: id,
-            name: labels.expression(id),
-            kind: "expression",
-            category: "expression",
-            value: 0,
-            exprId: id,
-            children: PHASES.flatMap(
-              (phase) =>
-                phaseOfExpression(
-                  phase,
-                  id,
-                  phase,
-                  labels.phase(phase),
-                  "phase"
-                ) ?? []
-            ),
-          })
-        ),
-        sumChildren({
-          key: UNATTRIBUTED,
-          name: labels.unattributed,
-          kind: "overhead",
-          category: "other",
-          value: 0,
-          children: [
-            overheadLeaf(
-              "compile",
-              labels.phase("compile"),
-              "compile",
-              summary.overhead.analysis
-            ),
-            overheadLeaf(
-              "graph",
-              labels.phase("graph"),
-              "graph",
-              summary.overhead.graph
-            ),
-            overheadLeaf(
-              "draw",
-              labels.phase("draw"),
-              "draw",
-              (un3d?.cpuDraw ?? 0) + summary.overhead.render
-            ),
-            overheadLeaf(
-              "shader",
-              labels.phase("shader"),
-              "shader",
-              un3d?.setProgram ?? 0
-            ),
-            overheadLeaf(
-              "other",
-              labels.phase("other"),
-              "other",
-              summary.overhead.other
-            ),
-          ],
-        }),
-      ],
-    };
-  }
-  return finish(sumChildren(root));
+          }),
+        ],
+      };
+    }
+    return finish(sumChildren(root), finished);
+  };
+
+  const trees = new Map<string, FlameNode>();
+  return {
+    tree(view) {
+      // Grouping only applies to CPU time.
+      const key = view.metric === "gpu" ? "gpu" : `cpu:${view.grouping}`;
+      let tree = trees.get(key);
+      if (!tree) trees.set(key, (tree = build(view)));
+      return tree;
+    },
+  };
 }
 
 /** Find the chain of nodes from the root along a path of keys. */
