@@ -149,14 +149,72 @@ const OP_NAMES: Partial<Record<number, string>> = {
   39: "L[i]",
   40: "L[i]",
   41: "L[i]",
-  15: "point",
-  16: "point.x",
 };
 
-/** What an instruction does, as the inspector lists it. */
-export function opName(instr: Instruction | undefined): string {
+const TUPLE = 15;
+const SLOT = 16;
+
+/** LaTeX operators by how they read, loosest binding first. */
+const SUMS: [RegExp, string][] = [
+  [/^\+/, "a+b"],
+  [/^-/, "a-b"],
+];
+const PRODUCTS: [RegExp, string][] = [
+  [/^\\cdot(?![a-zA-Z])/, "a·b"],
+  [/^\\times(?![a-zA-Z])/, "a×b"],
+];
+
+/**
+ * The operator a piece of LaTeX applies last, as written: `a\cdot b` is `a·b`
+ * and `\left|v\right|` is `|a|`.
+ */
+export function rootOperator(latex: string): string | undefined {
+  const s = latex.trim();
+  let depth = 0;
+  let sum: string | undefined;
+  let product: string | undefined;
+  /** Whether the outermost group closes before the end. */
+  let closedEarly = false;
+  for (let i = 0; i < s.length; i++) {
+    const rest = s.slice(i);
+    const bracket = /^(?:\\(left|right)(?![a-zA-Z])\s*(?:\\.|.)|([{}]))/.exec(
+      rest
+    );
+    if (bracket) {
+      depth += bracket[1] === "left" || bracket[2] === "{" ? 1 : -1;
+      if (depth === 0 && i + bracket[0].length < s.length) closedEarly = true;
+      i += bracket[0].length - 1;
+      continue;
+    }
+    if (depth !== 0) continue;
+    // A sign at the start, or after another operator, isn't a sum.
+    const before = s.slice(0, i).trimEnd();
+    const binary = before !== "" && !/[+\-=,(]$|\\cdot$|\\times$/.test(before);
+    for (const [re, name] of SUMS) if (binary && re.test(rest)) sum = name;
+    for (const [re, name] of PRODUCTS) if (re.test(rest)) product = name;
+  }
+  if (sum ?? product) return sum ?? product;
+  if (!closedEarly && s.startsWith("\\left|")) return "|a|";
+  return undefined;
+}
+
+/**
+ * What an instruction does, as the inspector lists it. Desmos works on points
+ * one coordinate at a time, so reading or making a point is named after the
+ * operation written in its source, like `x/y/z for a·b`.
+ */
+export function opName(instr: Instruction | undefined, frame?: Frame): string {
   if (!instr) return "?";
   if (instr.type === NATIVE_FUNCTION) return `${instr.symbol ?? "?"}()`;
+  if (instr.type === SLOT || instr.type === TUPLE) {
+    const what = instr.type === SLOT ? "x/y/z" : "make point";
+    const op = frame && rootOperator(frame.input.slice(frame.start, frame.end));
+    return op
+      ? `${what} for ${op}`
+      : instr.type === SLOT
+        ? "x/y/z of point"
+        : what;
+  }
   return OP_NAMES[instr.type] ?? `op ${instr.type}`;
 }
 
@@ -590,7 +648,7 @@ export function createShaderTagger() {
       let tallies = c.bySource.get(src);
       if (!tallies) c.bySource.set(src, (tallies = new Map()));
       const category = costCategory(instr, cost);
-      const op = opName(instr);
+      const op = opName(instr, src);
       const loop = top?.loop.id ?? -1;
       const elements = reductionElements(chunk, instr, cost, c.nameValues);
       const key = `${category}|${op}|${loop}|${elements ? `${elements.terms}:${elements.symbols.join(",")}` : ""}`;

@@ -17,6 +17,8 @@ import {
   LIST_TOKEN,
   listName,
   loopSymbols,
+  opName,
+  rootOperator,
   ShaderSourceInfo,
 } from "./worker";
 
@@ -69,6 +71,31 @@ describe("costCategory", () => {
     expect(costCategory({ type: 38 }, 3)).toBe("list");
     expect(costCategory({ type: 47 }, 0)).toBe("free");
     expect(costCategory({ type: 55 }, Infinity)).toBe("never");
+  });
+});
+
+describe("rootOperator", () => {
+  test("is the operator applied last, outside any brackets", () => {
+    expect(rootOperator("a_{v}\\cdot b_{v}")).toBe("a·b");
+    expect(rootOperator("p_{v}-p_{1}")).toBe("a-b");
+    expect(rootOperator("\\left(a-b\\right)\\times c")).toBe("a×b");
+    expect(rootOperator("a\\cdot b+c")).toBe("a+b");
+    expect(rootOperator("-a\\cdot b")).toBe("a·b");
+    expect(rootOperator("\\left|v\\right|")).toBe("|a|");
+    expect(rootOperator("\\left|a\\right|\\left|b\\right|")).toBe(undefined);
+    expect(rootOperator("\\left(p_{2}-p_{1}\\right)\\left[n\\right]")).toBe(
+      undefined
+    );
+  });
+});
+
+describe("opName", () => {
+  test("names reading and making points after the operation written", () => {
+    const dot = fr("d=a\\cdot b", 2);
+    expect(opName({ type: 16 }, dot)).toBe("x/y/z for a·b");
+    expect(opName({ type: 15 }, fr("c=p-q", 2))).toBe("make point for a-b");
+    expect(opName({ type: 16 }, fr("k.x", 0))).toBe("x/y/z of point");
+    expect(opName({ type: 37, symbol: "tan" }, dot)).toBe("tan()");
   });
 });
 
