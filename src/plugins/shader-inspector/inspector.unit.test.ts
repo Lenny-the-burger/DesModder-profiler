@@ -14,6 +14,7 @@ import {
   foldOf,
   foldSource,
   Frame,
+  loopSymbols,
   ShaderSourceInfo,
 } from "./worker";
 
@@ -182,6 +183,25 @@ describe("createShaderTagger", () => {
           },
         ],
       },
+    ]);
+  });
+
+  test("names a broadcast by the lists it reads", () => {
+    const chunk = chunkOf([
+      { type: 1, value: [1, 2, 3, 4, 5], dsmSrc: fr("l", 0, 1) },
+      { type: 1, value: [0, 1, 2, 3], dsmSrc: fr("a+[0,1,2,3]", 2, 11) },
+      { type: 1, value: [1, 2], dsmSrc: fr("m=[1,2]", 2, 7) },
+      { type: 23, context: { type: "implicit" }, endIndex: 8 },
+      { type: 41, args: [0, 3] },
+      { type: 41, args: [1, 3] },
+      { type: 41, args: [2, 3] },
+      { type: 8, args: [4, 5] },
+      { type: 24 },
+    ]);
+    expect(loopSymbols(chunk.instructions[3], chunk, 3)).toEqual([
+      "l",
+      "[0, 1, 2, ...]",
+      "m",
     ]);
   });
 
@@ -378,6 +398,35 @@ describe("report", () => {
       "tan() (×2)",
     ]);
     expect(repeatsText(stats)).toBe("15 × 100 (n) + 10");
+  });
+
+  test("keeps nested loops apart", () => {
+    const loop = {
+      key: "color:1",
+      runs: 1000,
+      loops: [
+        { terms: 100, symbols: ["m"] },
+        { terms: 10, symbols: ["n"] },
+      ],
+    };
+    const op = {
+      category: "costly" as const,
+      op: "tan()",
+      loop,
+      count: 1,
+      base: 5,
+      cost: 5000,
+    };
+    expect(opText(op)).toBe("tan() (×100: m) (×10: n)");
+    expect(
+      repeatsText({
+        cost: {},
+        ops: { k: op },
+        slots: {},
+        chars: 0,
+        loopSteps: 0,
+      })
+    ).toBe("5 × 100 (m) × 10 (n)");
   });
 
   test("a part holding only one other part of its expression merges with it", () => {

@@ -27,8 +27,8 @@ export interface LoopTag {
   key: string;
   /** Times the body runs per pixel. */
   runs: number;
-  /** Variables the loops run over. */
-  symbols: string[];
+  /** Each loop it is in, outermost first. */
+  loops: { terms: number; symbols: string[] }[];
 }
 
 /** One operation's share of the cost: its call sites in one loop, or outside any. */
@@ -59,6 +59,7 @@ export type SpanNodeKind = "shader" | "part" | "frame" | "untraced";
 export interface NodeLoop {
   kind: WorkerLoop["kind"];
   terms: number;
+  symbols: string[];
   bodyCost: number;
   runs: number;
 }
@@ -248,7 +249,10 @@ export function addShader(
       const tag: LoopTag = {
         key: `${partNode.part ?? ""}:${l.id}`,
         runs: (outer?.runs ?? 1) * l.terms,
-        symbols: [...(outer?.symbols ?? []), ...(l.symbols ?? [])],
+        loops: [
+          ...(outer?.loops ?? []),
+          { terms: l.terms, symbols: l.symbols ?? [] },
+        ],
       };
       loopTags.set(l.id, tag);
       tagLoops(l.children, tag);
@@ -318,6 +322,7 @@ export function addShader(
       n.loops.push({
         kind: l.kind,
         terms: l.terms,
+        symbols: l.symbols ?? [],
         bodyCost: l.bodyCost,
         runs,
       });
@@ -384,10 +389,20 @@ export function resolvePath(root: SpanNode, keys: string[]): SpanNode[] {
   return chain;
 }
 
-/** A loop as the inspector writes it: `×100: n`. */
+/** What a loop runs over, as the inspector writes it: `n` or `L, M`. */
+export const overText = (symbols: string[]) => symbols.join(", ");
+
+/** The loops something runs in, as the inspector writes them: `(×100: m) (×10: n)`. */
 export function loopText(loop: LoopTag) {
-  const runs = `×${Math.round(loop.runs).toLocaleString()}`;
-  return loop.symbols.length > 0 ? `${runs}: ${loop.symbols.join(", ")}` : runs;
+  return loop.loops
+    .filter((l) => l.terms !== 1)
+    .map(({ terms, symbols }) => {
+      const runs = `×${Math.round(terms).toLocaleString()}`;
+      return symbols.length > 0
+        ? `(${runs}: ${overText(symbols)})`
+        : `(${runs})`;
+    })
+    .join(" ");
 }
 
 /** The operations of one cost category, costliest first. */

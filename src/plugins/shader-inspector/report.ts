@@ -58,6 +58,8 @@ export interface LoopRow {
   kind: LoopKind;
   origin: Origin;
   terms: number;
+  /** What it runs over. */
+  symbols: string[];
   /** Cost of one run of the body. */
   bodyCost: number;
   /** How many times the loop runs per pixel, counting the loops around it. */
@@ -146,6 +148,7 @@ function loopRows(
       kind: l.kind,
       origin: originOf(info, l.source, owner, resolve),
       terms: l.terms,
+      symbols: l.symbols ?? [],
       bodyCost: l.bodyCost,
       runs,
       depth,

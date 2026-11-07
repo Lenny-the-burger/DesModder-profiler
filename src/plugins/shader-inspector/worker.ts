@@ -36,6 +36,8 @@ interface Instruction {
   callData?: { type?: string; indexSymbol?: string };
   /** Broadcasts: what they broadcast over. */
   context?: { type?: string; callData?: { inputListSymbols?: string[] } };
+  /** Blocks: where they end. */
+  endIndex?: number;
   dsmSrc?: Source;
 }
 
@@ -157,17 +159,99 @@ export function opName(instr: Instruction | undefined): string {
   return OP_NAMES[instr.type] ?? `op ${instr.type}`;
 }
 
-/** The variables a loop runs over, as they read in the expression. */
-export function loopSymbols(instr: Instruction): string[] {
+/** A variable's LaTeX as plain text: `p_{rojRes}` reads `projRes`. */
+const plainName = (latex: string) =>
+  latex.replace(/_\{([^{}]*)\}/g, "$1").replace(/[\\_{}]/g, "");
+
+const IDENTIFIER =
+  /^(?:\[a-zA-Z]+|[a-zA-Z])(?:_\{[a-zA-Z0-9]+\}|_[a-zA-Z0-9])?$/;
+/** Frames to climb looking for a list's name. */
+const MAX_NAME_DEPTH = 4;
+/** Values a list with no name is shown by. */
+const PREVIEW_VALUES = 3;
+
+/**
+ * The name of the list a frame is part of: the variable it is, or the one it
+ * is the definition of.
+ */
+export function listName(frame: Frame | undefined): string | undefined {
+  for (let f = frame, i = 0; f && i < MAX_NAME_DEPTH; f = f.parent, i++) {
+    const text = f.input.slice(f.start, f.end).trim();
+    if (IDENTIFIER.test(text)) return plainName(text);
+    const def = /^(.*?)=/.exec(f.input);
+    const lhs = def?.[1].trim();
+    // Only the list's own frame: the statement around a use of it is some
+    // other expression's definition.
+    if (
+      i === 0 &&
+      lhs !== undefined &&
+      IDENTIFIER.test(lhs) &&
+      (f.start === 0 || f.start === def![0].length)
+    )
+      return plainName(lhs);
+  }
+  return undefined;
+}
+
+const previewNumber = (v: unknown) =>
+  typeof v === "number"
+    ? String(Math.round(v * 1000) / 1000)
+    : typeof v === "object" &&
+        v !== null &&
+        typeof (v as { n?: unknown }).n === "number" &&
+        typeof (v as { d?: unknown }).d === "number"
+      ? String(
+          Math.round(((v as { n: number }).n / (v as { d: number }).d) * 1000) /
+            1000
+        )
+      : undefined;
+
+/** A list with no name, by its first few values: `[0, 1, 2, ...]`. */
+export function listPreview(
+  instr: Instruction | undefined
+): string | undefined {
+  if (instr?.type !== 1 || !Array.isArray(instr.value)) return undefined;
+  const values = instr.value.slice(0, PREVIEW_VALUES).map(previewNumber);
+  if (values.length === 0 || values.some((v) => v === undefined))
+    return undefined;
+  const more = instr.value.length > PREVIEW_VALUES ? ", ..." : "";
+  return `[${values.join(", ")}${more}]`;
+}
+
+const LIST_ACCESS = new Set([39, 40, 41]);
+
+/**
+ * What a loop runs over, as it reads in the expression: the variable of a sum,
+ * product or list comprehension, or the lists a broadcast goes through.
+ */
+export function loopSymbols(
+  instr: Instruction,
+  chunk?: Chunk,
+  index?: number
+): string[] {
   const raw =
     instr.type === 19
       ? [instr.callData?.indexSymbol]
       : instr.context?.type === "list-comprehension"
         ? (instr.context.callData?.inputListSymbols ?? [])
         : [];
-  return raw
+  const names = raw
     .filter((s): s is string => typeof s === "string" && !s.startsWith("_"))
-    .map((s) => s.replace(/_/g, ""));
+    .map(plainName);
+  if (names.length > 0 || instr.type !== 23 || !chunk || index === undefined)
+    return names;
+  // A broadcast reads each list it goes through at its index.
+  const end = instr.endIndex ?? -1;
+  const lists = new Set<string>();
+  for (let i = index + 1; i < end; i++) {
+    const access = chunk.getInstruction(i);
+    if (!access || !LIST_ACCESS.has(access.type)) continue;
+    if (access.args?.[1] !== index) continue;
+    const list = chunk.getInstruction(access.args[0]);
+    const name = listName(list?.dsmSrc) ?? listPreview(list);
+    if (name !== undefined) lists.add(name);
+  }
+  return [...lists];
 }
 
 export interface WorkerLoop {
@@ -428,12 +512,19 @@ export function createShaderTagger() {
       return cost;
     },
     /** The body of a loop or broadcast, run `terms` times. */
-    loop(chunk: Chunk, instr: Instruction, terms: number, body: () => number) {
+    loop(
+      chunk: Chunk,
+      instr: Instruction,
+      terms: number,
+      body: () => number,
+      /** Where the loop starts. */
+      index?: number
+    ) {
       const c = costs;
       if (!c || c.chunk !== chunk) return body();
       const loop: WorkerLoop = {
         id: c.loops++,
-        symbols: loopSymbols(instr),
+        symbols: loopSymbols(instr, chunk, index),
         kind:
           instr.type === 19
             ? instr.callData?.type === "product"

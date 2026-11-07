@@ -901,6 +901,17 @@ export class ShaderInspectorView extends Component<{
             style={() => ({ background: this.si().originColor(l().origin) })}
           />
           {this.label(() => l().origin)}
+          <If predicate={() => l().symbols.length > 0}>
+            {() => (
+              <span class="dsm-si-loop-over">
+                {() =>
+                  format("shader-inspector-loop-over", {
+                    over: l().symbols.join(", "),
+                  })
+                }
+              </span>
+            )}
+          </If>
         </div>
         <If predicate={limited}>
           {() => (
@@ -1130,7 +1141,7 @@ function usageSummary(si: ShaderInspector, id: string) {
     parts.push(format("shader-inspector-cost-short", { cost: fmt(u.cost) }));
   for (const l of u.loops)
     parts.push(
-      `${l.kind === "sum" ? "Σ" : l.kind === "product" ? "Π" : "[ ]"} ${fmt(l.terms)}`
+      `${l.kind === "sum" ? "Σ" : l.kind === "product" ? "Π" : "[ ]"} ${fmt(l.terms)}${l.symbols.length > 0 ? ` (${l.symbols.join(", ")})` : ""}`
     );
   if (u.chars > 0)
     parts.push(format("shader-inspector-panel-chars", { count: fmt(u.chars) }));

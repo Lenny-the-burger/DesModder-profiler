@@ -173,7 +173,7 @@ Math.round($w($q.value)));
 if (!isFinite($s)) return 1 / 0;
 if ($s === 0) return 0;
 let $a = self.dsm_shader
-  ? self.dsm_shader.loop($e, $r, $s, () => $SF($e, $t + 1, $r.endIndex - 1, $n))
+  ? self.dsm_shader.loop($e, $r, $s, () => $SF($e, $t + 1, $r.endIndex - 1, $n), $t)
   : $SF($e, $t + 1, $r.endIndex - 1, $n);
 return $s * $a
 }
@@ -201,7 +201,7 @@ let $i = $v($o.value);
 if (!isFinite($i)) return 1 / 0;
 if ($i === 0) return 0;
 let $s = self.dsm_shader
-  ? self.dsm_shader.loop($e, $r, $i, () => $SF($e, $t + 1, $r.endIndex - 1, $n))
+  ? self.dsm_shader.loop($e, $r, $i, () => $SF($e, $t + 1, $r.endIndex - 1, $n), $t)
   : $SF($e, $t + 1, $r.endIndex - 1, $n);
 return $i * $s
 }

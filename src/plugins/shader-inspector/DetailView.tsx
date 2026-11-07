@@ -382,7 +382,11 @@ export class DetailView extends Component<{
             <div class="dsm-si-line">
               {() =>
                 format("shader-inspector-detail-loop", {
-                  kind: format(`shader-inspector-loop-kind-${l().kind}`),
+                  kind:
+                    format(`shader-inspector-loop-kind-${l().kind}`) +
+                    (l().symbols.length > 0
+                      ? ` ${format("shader-inspector-loop-over", { over: l().symbols.join(", ") })}`
+                      : ""),
                   terms: fmt(l().terms),
                   body: fmt(l().bodyCost),
                   runs: fmt(l().runs),

@@ -1,5 +1,5 @@
 /** Plain-text renderings of numbers, LaTeX and costs. */
-import { OpStat, Stats, loopText, repeatsOf } from "./tree";
+import { OpStat, Stats, loopText, overText, repeatsOf } from "./tree";
 
 export const fmt = (n: number) =>
   Number.isFinite(n) ? Math.round(n).toLocaleString() : "∞";
@@ -45,10 +45,14 @@ export function repeatsText(stats: Stats): string | undefined {
   if (!repeats.some((r) => r.loop && r.loop.runs !== 1)) return undefined;
   return repeats
     .map(({ loop, base }) => {
-      if (!loop) return fmt(base);
-      const vars =
-        loop.symbols.length > 0 ? ` (${loop.symbols.join(", ")})` : "";
-      return `${fmt(base)} × ${fmt(loop.runs)}${vars}`;
+      const loops = (loop?.loops ?? []).filter((l) => l.terms !== 1);
+      return [
+        fmt(base),
+        ...loops.map(
+          (l) =>
+            `${fmt(l.terms)}${l.symbols.length > 0 ? ` (${overText(l.symbols)})` : ""}`
+        ),
+      ].join(" × ");
     })
     .join(" + ");
 }
@@ -56,7 +60,7 @@ export function repeatsText(stats: Stats): string | undefined {
 /** An operation's row in the cost breakdown: `tan() (×100: n) (×3)`. */
 export function opText(o: OpStat) {
   let s = o.op;
-  if (o.loop && o.loop.runs !== 1) s += ` (${loopText(o.loop)})`;
+  if (o.loop && o.loop.runs !== 1) s += ` ${loopText(o.loop)}`;
   if (o.count > 1) s += ` (×${fmt(o.count)})`;
   return s;
 }

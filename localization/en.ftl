@@ -512,6 +512,7 @@ shader-inspector-cat-uniforms-list = List elements
 shader-inspector-cat-uniforms-baked = Past the limit, written into the shader
 shader-inspector-detail-hint = Highlighted parts are colored by what they add the most of. Click one to look inside it.
 shader-inspector-detail-loop = { $kind }: { $terms } terms × { $body } cost each, runs { $runs }× per pixel
+shader-inspector-loop-over = over { $over }
 shader-inspector-loop-kind-sum = Sum
 shader-inspector-loop-kind-product = Product
 shader-inspector-loop-kind-list = List operation
