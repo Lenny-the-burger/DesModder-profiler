@@ -1,0 +1,265 @@
+# Replacements for the shader inspector
+
+*plugin* `shader-inspector`
+
+All hooks call `self.dsm_shader?.…`. The shared module is also evaluated on
+the main thread, where `dsm_shader` is not defined, so the hooks are no-ops
+there.
+
+## Track which expression each parse node belongs to
+
+*Description* `Track the expression being compiled, for the shader inspector`
+
+*worker_only*
+
+The node compiler is wrapped instead of edited inside, so the tracking is
+undone even when compiling throws.
+
+*Find* => `from`
+```js
+function $tt($e, $t) {
+  let { chunk: $r } = $e, $n;
+  $Fk();
+  let $o = $iae($e, $t);
+```
+
+*Replace* `from` with
+```js
+function $tt($e, $t) {
+  const __dsmPrev = self.dsm_shader?.enter($t);
+  try {
+    return __dsmShaderCompileNode($e, $t);
+  } finally {
+    self.dsm_shader?.exit(__dsmPrev);
+  }
+}
+function __dsmShaderCompileNode($e, $t) {
+  let { chunk: $r } = $e, $n;
+  $Fk();
+  let $o = $iae($e, $t);
+```
+
+## Tag each instruction with its expression
+
+*Description* `Tag compiler instructions with their expression, for the shader inspector`
+
+*worker_only*
+
+*Find* => `from`
+```js
+pushInstructionChecked($t) {
+```
+
+*Replace* `from` with
+```js
+pushInstructionChecked($t) {
+  self.dsm_shader?.tag(this, $t);
+```
+
+## Remember the expression of each constant the GLSL emitter prints
+
+*Description* `Track which expression each shader uniform comes from`
+
+*worker_only*
+
+*Find* => `from`
+```js
+emitConstant($r) {
+  return this.printValue($r, $r.mobility)
+}
+```
+
+*Replace* `from` with
+```js
+emitConstant($r) {
+  self.dsm_shader?.constant(this, $r);
+  return this.printValue($r, $r.mobility)
+}
+```
+
+## Record the expression of each shader uniform
+
+*Description* `Record which expression each shader uniform comes from`
+
+*worker_only*
+
+*Find* => `from`
+```js
+let $i = "_DCG_SC_" + this.shaderUniforms.length;
+```
+
+*Replace* `from` with
+```js
+self.dsm_shader?.uniform(this);
+let $i = "_DCG_SC_" + this.shaderUniforms.length;
+```
+
+## Record the expression of each shader list
+
+*Description* `Record which expression each shader list comes from`
+
+*worker_only*
+
+*Find* => `from`
+```js
+return this.listConstants.push($f), $p
+}
+```
+
+*Replace* `from` with
+```js
+return self.dsm_shader?.list(this), this.listConstants.push($f), $p
+}
+```
+
+## Attach the expressions behind a shader to it
+
+*Description* `Attach per-expression shader details for the shader inspector`
+
+*worker_only*
+
+*Find* => `from`
+```js
+costEstimate: $qd(this.chunk),
+```
+
+*Replace* `from` with
+```js
+costEstimate: self.dsm_shader
+  ? self.dsm_shader.cost(this, () => $qd(this.chunk))
+  : $qd(this.chunk),
+dsmInfo: self.dsm_shader?.report(this),
+```
+
+## Attribute each instruction's cost estimate to its expression
+
+*Description* `Attribute shader cost estimates to expressions`
+
+*worker_only*
+
+*Find* => `from`
+```js
+$Po($a) ? ($i += $joe($e, $s, $a, $n), $s = $a.endIndex) : $i += $Joe($e, $s, $n)
+```
+
+*Replace* `from` with
+```js
+$Po($a)
+  ? ($i += $joe($e, $s, $a, $n), $s = $a.endIndex)
+  : $i += self.dsm_shader
+      ? self.dsm_shader.leaf($e, $s, $Joe($e, $s, $n))
+      : $Joe($e, $s, $n)
+```
+
+## Record each sum and product in a shader's cost estimate
+
+*Description* `Record shader sums and products and their cost`
+
+*worker_only*
+
+*Find* => `from`
+```js
+Math.round($w($q.value)));
+if (!isFinite($s)) return 1 / 0;
+if ($s === 0) return 0;
+let $a = $SF($e, $t + 1, $r.endIndex - 1, $n);
+return $s * $a
+}
+```
+
+*Replace* `from` with
+```js
+Math.round($w($q.value)));
+if (!isFinite($s)) return 1 / 0;
+if ($s === 0) return 0;
+let $a = self.dsm_shader
+  ? self.dsm_shader.loop($e, $r, $s, () => $SF($e, $t + 1, $r.endIndex - 1, $n))
+  : $SF($e, $t + 1, $r.endIndex - 1, $n);
+return $s * $a
+}
+```
+
+## Record each list operation in a shader's cost estimate
+
+*Description* `Record shader list operations and their cost`
+
+*worker_only*
+
+*Find* => `from`
+```js
+let $i = $v($o.value);
+if (!isFinite($i)) return 1 / 0;
+if ($i === 0) return 0;
+let $s = $SF($e, $t + 1, $r.endIndex - 1, $n);
+return $i * $s
+}
+```
+
+*Replace* `from` with
+```js
+let $i = $v($o.value);
+if (!isFinite($i)) return 1 / 0;
+if ($i === 0) return 0;
+let $s = self.dsm_shader
+  ? self.dsm_shader.loop($e, $r, $i, () => $SF($e, $t + 1, $r.endIndex - 1, $n))
+  : $SF($e, $t + 1, $r.endIndex - 1, $n);
+return $i * $s
+}
+```
+
+## Keep an instruction's expression when the compiler copies it
+
+*Description* `Keep the expression of copied compiler instructions`
+
+*worker_only*
+
+Broadcasting and other transforms rebuild instructions while compiling some
+other node. The copy belongs to the original's expression.
+
+*Find* => `from`
+```js
+function $Yh($e, $t, $r) {
+  switch ($t.type) {
+    case 8:
+      return $e.Add($r);
+```
+
+*Replace* `from` with
+```js
+function $Yh($e, $t, $r) {
+  const __dsmPrev = self.dsm_shader?.copying($t);
+  try {
+    return __dsmShaderCopyInstruction($e, $t, $r);
+  } finally {
+    self.dsm_shader?.copied(__dsmPrev);
+  }
+}
+function __dsmShaderCopyInstruction($e, $t, $r) {
+  switch ($t.type) {
+    case 8:
+      return $e.Add($r);
+```
+
+## Give a folded constant the expression of the value it came from
+
+*Description* `Keep the expression of constant-folded values`
+
+*worker_only*
+
+Folding pops the instruction and pushes its value as a constant. The value
+comes from the arguments, so it belongs to whichever of them can change.
+
+*Find* => `from`
+```js
+popInstruction() {
+  this.unsafelyTruncate(this.instructions.length - 1)
+}
+```
+
+*Replace* `from` with
+```js
+popInstruction() {
+  self.dsm_shader?.popped(this);
+  this.unsafelyTruncate(this.instructions.length - 1)
+}
+```
