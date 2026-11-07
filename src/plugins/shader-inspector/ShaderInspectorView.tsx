@@ -1,4 +1,4 @@
-import ShaderInspector, { LimitErrorRow, SurfaceRow } from ".";
+import ShaderInspector, { SurfaceRow } from ".";
 import "./ShaderInspectorView.less";
 import { MAX_LOOP_TERMS, RECOMPILE_REASONS } from "./analyze";
 import { LoopRow, Origin, PartReport, UniformGroup, usageOf } from "./report";
@@ -222,9 +222,9 @@ export class ShaderInspectorView extends Component<{
             <div class="dsm-si-errors">
               <For
                 each={() => this.si().errors}
-                key={(e: LimitErrorRow) => `${e.id}:${e.error}`}
+                key={(e: SurfaceRow) => `${e.id}:${e.error}`}
               >
-                {(e: () => LimitErrorRow) => this.errorRow(e)}
+                {(e: () => SurfaceRow) => this.errorRow(e)}
               </For>
             </div>
           )}
@@ -299,13 +299,29 @@ export class ShaderInspectorView extends Component<{
     );
   }
 
-  errorRow(e: () => LimitErrorRow) {
+  errorRow(e: () => SurfaceRow) {
     return (
-      <div class="dsm-si-row dsm-si-bad">
-        {this.label(() => e().id)}
+      <div
+        class="dsm-si-row dsm-si-pickable dsm-si-bad"
+        role="button"
+        tabindex="0"
+        onTap={() => this.si().select(e().id)}
+      >
+        {this.label(() => e().id, false)}
         <div class="dsm-si-line">
           {() => format(`shader-inspector-error-${e().error}`)}
         </div>
+        <If predicate={() => !!(e().color ?? e().restriction)}>
+          {() => (
+            <div class="dsm-si-line dsm-si-dim">
+              {() =>
+                format("shader-inspector-cost-short", {
+                  cost: fmt((e().color ?? e().restriction)!.cost),
+                })
+              }
+            </div>
+          )}
+        </If>
       </div>
     );
   }
@@ -377,48 +393,81 @@ export class ShaderInspectorView extends Component<{
               <div class="dsm-si-heading">
                 {this.label(() => this.report()?.id)}
               </div>
-              <div class="dsm-si-heading-buttons">
-                <Button
-                  color="light-gray"
-                  onTap={() => this.si().openDetail([])}
-                >
-                  {format("shader-inspector-open-detail-shader")}
-                </Button>
-                <Button color="light-gray" onTap={() => this.si().flame.open()}>
-                  {format("shader-inspector-open-flame")}
-                </Button>
-              </div>
-              <If predicate={() => this.report()!.colorId !== undefined}>
-                {() => (
-                  <div class="dsm-si-line dsm-si-dim">
-                    {format("shader-inspector-color-function")}
-                    {this.label(() => this.report()!.colorId)}
-                  </div>
-                )}
-              </If>
-              <If predicate={() => !this.traced()}>
-                {() => (
-                  <div class="dsm-si-warning">
-                    {format("shader-inspector-untraced-shader")}
-                  </div>
-                )}
-              </If>
-              {this.overview()}
-              {this.uniformSection()}
-              <For
-                each={() => this.report()!.parts}
-                key={(p: PartReport) => p.part}
+              <If
+                predicate={() => this.si().selectedRow()?.error !== undefined}
               >
-                {(p: () => PartReport) => this.costSection(p)}
-              </For>
-              <If predicate={() => this.allLoops().length > 0}>
-                {() => this.loopSection()}
+                {() => (
+                  <div class="dsm-si-error-banner">
+                    <div>
+                      {() =>
+                        format(
+                          `shader-inspector-error-${this.si().selectedRow()?.error ?? "color-cost"}`
+                        )
+                      }
+                    </div>
+                    <div class="dsm-si-dim">
+                      {() =>
+                        format(
+                          this.hasShader()
+                            ? "shader-inspector-error-rejected"
+                            : "shader-inspector-error-no-shader"
+                        )
+                      }
+                    </div>
+                  </div>
+                )}
               </If>
-              {this.glslSection()}
-              {this.recompileSection()}
+              <If predicate={() => this.hasShader()}>
+                {() => this.shaderDetail()}
+              </If>
             </div>
           )}
         </If>
+      </div>
+    );
+  }
+
+  hasShader() {
+    return (this.report()?.parts.length ?? 0) > 0;
+  }
+
+  shaderDetail() {
+    const errored = () => this.si().selectedRow()?.error !== undefined;
+    return (
+      <div>
+        <div class="dsm-si-heading-buttons">
+          <Button color="light-gray" onTap={() => this.si().openDetail([])}>
+            {format("shader-inspector-open-detail-shader")}
+          </Button>
+          <Button color="light-gray" onTap={() => this.si().flame.open()}>
+            {format("shader-inspector-open-flame")}
+          </Button>
+        </div>
+        <If predicate={() => this.report()!.colorId !== undefined}>
+          {() => (
+            <div class="dsm-si-line dsm-si-dim">
+              {format("shader-inspector-color-function")}
+              {this.label(() => this.report()!.colorId)}
+            </div>
+          )}
+        </If>
+        <If predicate={() => !this.traced()}>
+          {() => (
+            <div class="dsm-si-warning">
+              {format("shader-inspector-untraced-shader")}
+            </div>
+          )}
+        </If>
+        {this.overview()}
+        {this.uniformSection()}
+        <For each={() => this.report()!.parts} key={(p: PartReport) => p.part}>
+          {(p: () => PartReport) => this.costSection(p)}
+        </For>
+        <If predicate={() => this.allLoops().length > 0}>
+          {() => this.loopSection()}
+        </If>
+        {this.glslSection()}
+        <If predicate={() => !errored()}>{() => this.recompileSection()}</If>
       </div>
     );
   }
@@ -441,7 +490,9 @@ export class ShaderInspectorView extends Component<{
       const chars = report.parts.reduce((n, p) => n + p.chars, 0);
       const steps = report.parts.reduce((n, p) => n + p.loopSteps, 0);
       const row = this.si().selectedRow();
-      return [
+      // Recompiles and programs only count shaders Desmos kept.
+      const kept = row?.error === undefined;
+      const tiles = [
         {
           key: "slots",
           label: format("shader-inspector-tile-slots"),
@@ -479,6 +530,9 @@ export class ShaderInspectorView extends Component<{
           bad: false,
         },
       ];
+      return kept
+        ? tiles
+        : tiles.filter((t) => t.key !== "recompiles" && t.key !== "programs");
     };
     return (
       <div class="dsm-si-tiles">

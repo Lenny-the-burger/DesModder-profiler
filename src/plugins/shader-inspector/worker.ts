@@ -228,6 +228,8 @@ export function createShaderTagger() {
   const loopSources = new WeakMap<WorkerLoop, Source | undefined>();
   let costs: CostCollection | undefined;
   let lastCost: CostCollection | undefined;
+  /** The shader emitted last, which a cost limit error rejects. */
+  let lastShader: unknown;
 
   function record(emitter: Emitter) {
     let r = records.get(emitter);
@@ -365,6 +367,22 @@ export function createShaderTagger() {
       } finally {
         c.stack.pop();
       }
+    },
+
+    /** A shader is finished. */
+    finished<T>(shader: T): T {
+      lastShader = shader;
+      return shader;
+    },
+    /**
+     * Desmos makes a cost limit error for the shader it just emitted. Keep the
+     * shader on the error, so the inspector can show why it costs so much.
+     */
+    rejected<T extends object>(message: T): T {
+      if (lastShader !== undefined)
+        (message as T & { dsmShader?: unknown }).dsmShader = lastShader;
+      lastShader = undefined;
+      return message;
     },
 
     /** What to attach to the finished shader. */

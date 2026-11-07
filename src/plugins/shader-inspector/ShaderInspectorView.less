@@ -25,8 +25,18 @@
     line-height: 22px;
   }
 
-  .dsm-si-pin.dsm-selected {
-    color: @ok;
+  .dsm-si-error-banner {
+    margin: 4px 0 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: @bad;
+    background: rgba(199, 68, 64, 0.08);
+
+    .dsm-si-dim {
+      margin-top: 2px;
+    }
   }
 
   .dsm-si-summary {
@@ -66,15 +76,9 @@
     color: #7a5200;
   }
 
-  .dsm-si-rows,
-  .dsm-si-errors {
-    max-height: 55vh;
-    overflow-y: auto;
-  }
-
+  // No height limits of their own: Desmos moves a tall popover up to the top
+  // of the screen and scrolls it once it fills the whole height.
   .dsm-si-detail {
-    max-height: 70vh;
-    overflow-y: auto;
     padding-right: 2px;
   }
 

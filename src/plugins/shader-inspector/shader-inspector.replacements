@@ -263,3 +263,80 @@ popInstruction() {
   this.unsafelyTruncate(this.instructions.length - 1)
 }
 ```
+
+## Remember the shader emitted last
+
+*Description* `Remember the last emitted shader, for the shader inspector`
+
+*worker_only*
+
+*Find* => `from`
+```js
+finish($r) {
+  return $r = this.listConstants.join("") + $r,
+```
+
+*Replace* `from` with
+```js
+finish($r) {
+  return self.dsm_shader
+    ? self.dsm_shader.finished(this.__dsmFinish($r))
+    : this.__dsmFinish($r);
+}
+__dsmFinish($r) {
+  return $r = this.listConstants.join("") + $r,
+```
+
+## Keep the shader rejected for its color function cost
+
+*Description* `Keep shaders rejected for their cost, for the shader inspector`
+
+*worker_only*
+
+*Find* => `from`
+```js
+$C("shared-calculator-error-color-function-exceeds-cost-limit")
+```
+
+*Replace* `from` with
+```js
+self.dsm_shader
+  ? self.dsm_shader.rejected($C("shared-calculator-error-color-function-exceeds-cost-limit"))
+  : $C("shared-calculator-error-color-function-exceeds-cost-limit")
+```
+
+## Keep the shader rejected for its restriction cost
+
+*Description* `Keep shaders rejected for their cost, for the shader inspector`
+
+*worker_only*
+
+*Find* => `from`
+```js
+$C("shared-calculator-error-restriction-exceeds-cost-limit")
+```
+
+*Replace* `from` with
+```js
+self.dsm_shader
+  ? self.dsm_shader.rejected($C("shared-calculator-error-restriction-exceeds-cost-limit"))
+  : $C("shared-calculator-error-restriction-exceeds-cost-limit")
+```
+
+## Keep the shader rejected for its inequality cost
+
+*Description* `Keep shaders rejected for their cost, for the shader inspector`
+
+*worker_only*
+
+*Find* => `from`
+```js
+$C("shared-calculator-error-inequality-exceeds-cost-limit")
+```
+
+*Replace* `from` with
+```js
+self.dsm_shader
+  ? self.dsm_shader.rejected($C("shared-calculator-error-inequality-exceeds-cost-limit"))
+  : $C("shared-calculator-error-inequality-exceeds-cost-limit")
+```

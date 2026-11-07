@@ -36,10 +36,12 @@ export const LIMIT_ERRORS = {
 
 export type LimitError = (typeof LIMIT_ERRORS)[keyof typeof LIMIT_ERRORS];
 
-export interface LimitErrorRow {
-  id: string;
-  error: LimitError;
-}
+/** Which shader each limit error rejects, when Desmos made one. */
+const ERROR_PARTS: Partial<Record<LimitError, keyof MaterialShaders>> = {
+  "color-cost": "color",
+  "restriction-cost": "restriction",
+  "inequality-cost": "restriction",
+};
 
 export interface SurfaceRow {
   /** The expression drawn with these shaders. */
@@ -59,6 +61,11 @@ export interface SurfaceRow {
   recompiles: number;
   reasons: Partial<Record<RecompileReason, number>>;
   lastReason: RecompileReason | undefined;
+  /**
+   * The limit Desmos rejected this expression's shader for. Its shaders are
+   * the ones Desmos made and then threw away, if it got that far.
+   */
+  error?: LimitError;
 }
 
 interface History {
@@ -71,6 +78,8 @@ interface GraphSketch3d {
   branches?: {
     color?: string;
     restrictionShader?: DesmosShader;
+    /** Restriction cost errors are on the branch, not the expression. */
+    error?: unknown;
   }[];
 }
 
@@ -115,7 +124,8 @@ export default class ShaderInspector extends PluginController {
   private sampleTimeout: ReturnType<typeof setTimeout> | undefined;
 
   rows: SurfaceRow[] = [];
-  errors: LimitErrorRow[] = [];
+  /** Expressions whose shader went over one of Desmos's limits. */
+  errors: SurfaceRow[] = [];
   budget = 0;
   /** Recompiles counted since the graph loaded or the counts were reset. */
   totalRecompiles = 0;
@@ -147,6 +157,7 @@ export default class ShaderInspector extends PluginController {
   metric: Metric = "cost";
   readonly flame = new FlameGraphController(this);
   private cachedReport: ShaderReport | undefined;
+  private cachedRow: SurfaceRow | undefined;
 
   afterEnable() {
     this.dsm.pillboxMenus?.addPillboxButton({
@@ -309,7 +320,7 @@ export default class ShaderInspector extends PluginController {
     this.lastPrograms = programs;
     this.rows = rows.sort(compareRows);
     this.cachedReport = undefined;
-    this.errors = this.limitErrors();
+    this.errors = this.limitErrors(grapher);
     // The surface being inspected is gone: back to the list.
     if (this.selectedId !== undefined && !this.selectedRow())
       this.select(undefined);
@@ -317,19 +328,49 @@ export default class ShaderInspector extends PluginController {
     this.flame.refresh();
   }
 
-  private limitErrors(): LimitErrorRow[] {
-    const out: LimitErrorRow[] = [];
-    for (const model of this.cc.getAllItemModels()) {
-      const err = (model as { formula?: { error?: unknown } }).formula?.error;
-      const key =
-        typeof err === "object" && err !== null
-          ? (err as { key?: unknown }).key
-          : undefined;
-      if (typeof key === "string" && key in LIMIT_ERRORS)
-        out.push({
-          id: model.id,
-          error: LIMIT_ERRORS[key as keyof typeof LIMIT_ERRORS],
-        });
+  private limitErrors(grapher: Grapher3d): SurfaceRow[] {
+    const found: [string, unknown][] = [];
+    for (const model of this.cc.getAllItemModels())
+      found.push([
+        model.id,
+        (model as { formula?: { error?: unknown } }).formula?.error,
+      ]);
+    for (const [id, sketch] of Object.entries(grapher.graphSketches)) {
+      const branch = sketch?.branches?.find((b) => b.error !== undefined);
+      if (branch) found.push([id, branch.error]);
+    }
+    const out: SurfaceRow[] = [];
+    const seen = new Set<string>();
+    for (const [id, err] of found) {
+      if (typeof err !== "object" || err === null) continue;
+      const { key, dsmShader } = err as {
+        key?: unknown;
+        dsmShader?: DesmosShader;
+      };
+      if (typeof key !== "string" || !(key in LIMIT_ERRORS)) continue;
+      const error = LIMIT_ERRORS[key as keyof typeof LIMIT_ERRORS];
+      if (seen.has(id)) continue;
+      seen.add(id);
+      // The worker keeps the shader Desmos rejected on the error.
+      const part = ERROR_PARTS[error];
+      const shaders: MaterialShaders =
+        part && typeof dsmShader?.source === "string"
+          ? { [part]: dsmShader }
+          : {};
+      out.push({
+        id,
+        colorId: part === "color" ? id : undefined,
+        surfaces: 1,
+        programs: 0,
+        material: analyzeMaterial(shaders, this.budget),
+        shaders,
+        restriction: this.parse(shaders.restriction),
+        color: this.parse(shaders.color),
+        recompiles: 0,
+        reasons: {},
+        lastReason: undefined,
+        error,
+      });
     }
     return out;
   }
@@ -354,14 +395,19 @@ export default class ShaderInspector extends PluginController {
   }
 
   selectedRow() {
-    return this.rows.find((r) => r.id === this.selectedId);
+    const id = this.selectedId;
+    return (
+      this.rows.find((r) => r.id === id) ?? this.errors.find((r) => r.id === id)
+    );
   }
 
   /** Everything about the selected shader. */
   report(): ShaderReport | undefined {
     const row = this.selectedRow();
     if (!row) return undefined;
-    if (this.cachedReport?.id === row.id) return this.cachedReport;
+    if (this.cachedReport?.id === row.id && this.cachedRow === row)
+      return this.cachedReport;
+    this.cachedRow = row;
     this.cachedReport = shaderReport({
       id: row.id,
       colorId: row.colorId,
