@@ -6,6 +6,10 @@
 
 *Description* `Show how many characters used by an expression in the exppanel`
 
+Also shows what the expression adds to the 3D shader being inspected.
+
+*plugin* `code-golf` `shader-inspector`
+
 *Find* => `math_item`
 ```js
 $createElement("div", {
@@ -32,7 +36,8 @@ $createElement2("div", {
 *Replace* `__children__` with
 ```js
 __children__,
-DesModder.insertElement(() => ( DSM.codeGolf?.expressionItemCostPanel(this.model, this._rootNode)  ))
+DesModder.insertElement(() => ( DSM.codeGolf?.expressionItemCostPanel(this.model, this._rootNode)  )),
+DesModder.insertElement(() => DSM.shaderInspector?.expressionPanel(this.model))
 ```
 
 ## Add total counts to folders in exppanel

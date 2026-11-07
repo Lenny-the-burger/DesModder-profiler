@@ -1,0 +1,392 @@
+@ok: #2d70b3;
+@bad: #c74440;
+@track: rgba(0, 0, 0, 0.07);
+@free: #e4e7eb;
+
+.dcg-container .dsm-pillbox-popover:has(.dsm-shader-inspector-menu) {
+  width: 440px;
+  max-width: calc(100vw - 80px);
+}
+
+.dsm-shader-inspector-menu {
+  .dsm-si-title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    .dcg-popover-title {
+      flex: 1;
+    }
+  }
+
+  .dsm-si-back {
+    padding: 0 9px;
+    font-size: 18px;
+    line-height: 22px;
+  }
+
+  .dsm-si-pin.dsm-selected {
+    color: @ok;
+  }
+
+  .dsm-si-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
+    margin: 6px 0 8px;
+    font-size: 12px;
+    color: #555;
+  }
+
+  .dsm-si-total {
+    margin-left: auto;
+  }
+
+  .dsm-si-reset,
+  .dsm-si-code-toggle {
+    padding: 2px 8px;
+    font-size: 12px;
+  }
+
+  .dsm-si-empty,
+  .dsm-si-hint {
+    margin-bottom: 6px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: #666;
+  }
+
+  .dsm-si-warning {
+    margin: 4px 0;
+    padding: 4px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    background: #fff4e0;
+    color: #7a5200;
+  }
+
+  .dsm-si-rows,
+  .dsm-si-errors {
+    max-height: 55vh;
+    overflow-y: auto;
+  }
+
+  .dsm-si-detail {
+    max-height: 70vh;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+
+  .dsm-si-row {
+    padding: 6px 8px;
+    margin-bottom: 6px;
+    border-radius: 6px;
+    border-left: 3px solid transparent;
+    background: rgba(0, 0, 0, 0.035);
+
+    &.dsm-si-bad {
+      border-left-color: @bad;
+    }
+
+    &.dsm-si-pickable {
+      cursor: pointer;
+
+      &:hover {
+        background: rgba(0, 0, 0, 0.07);
+      }
+    }
+  }
+
+  .dsm-si-label {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    vertical-align: middle;
+    font-size: 13px;
+    mask-image: linear-gradient(to right, #000 85%, transparent);
+    cursor: pointer;
+  }
+
+  .dsm-si-missing {
+    font-style: italic;
+    color: #777;
+  }
+
+  .dsm-si-heading {
+    margin: 6px 0 2px;
+
+    .dsm-si-label {
+      font-size: 15px;
+    }
+  }
+
+  .dsm-si-meter {
+    height: 5px;
+    margin: 4px 0 3px;
+    border-radius: 3px;
+    background: @track;
+    overflow: hidden;
+  }
+
+  .dsm-si-meter-fill {
+    display: block;
+    height: 100%;
+    background: @ok;
+
+    &.dsm-si-meter-over {
+      background: @bad !important;
+    }
+  }
+
+  .dsm-si-line {
+    font-size: 12px;
+    line-height: 1.45;
+    color: #444;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .dsm-si-dim {
+    color: #777;
+  }
+
+  .dsm-si-bad-text {
+    color: @bad;
+  }
+
+  .dsm-si-caption {
+    margin-top: 3px;
+    font-size: 11px;
+    line-height: 1.35;
+    color: #888;
+  }
+
+  // ---- overview ----
+
+  .dsm-si-tiles {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin: 8px 0;
+  }
+
+  .dsm-si-tile {
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.035);
+
+    &.dsm-si-tile-bad .dsm-si-tile-value {
+      color: @bad;
+    }
+  }
+
+  .dsm-si-tile-value {
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+    color: #222;
+  }
+
+  .dsm-si-tile-label {
+    font-size: 11px;
+    color: #777;
+  }
+
+  // ---- sections and bars ----
+
+  .dsm-si-section {
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+  }
+
+  .dsm-si-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 5px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+
+    .dsm-si-dim {
+      font-weight: normal;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  .dsm-si-bar {
+    position: relative;
+    display: flex;
+    height: 14px;
+    border-radius: 4px;
+    background: @track;
+    overflow: hidden;
+  }
+
+  .dsm-si-bar-slot {
+    flex-shrink: 0;
+    display: block;
+    height: 100%;
+    min-width: 1px;
+
+    > .dcg-tooltip-hit-area-container {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  }
+
+  .dsm-si-bar-segment {
+    display: block;
+    width: 100%;
+    height: 100%;
+    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+
+    &:hover {
+      filter: brightness(1.15);
+    }
+  }
+
+  .dsm-si-bar-free {
+    background: @free;
+    cursor: default;
+
+    &:hover {
+      filter: none;
+    }
+  }
+
+  // Values past the limit: written into the source instead of uniforms.
+  .dsm-si-bar-over {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.75) 0 3px,
+      transparent 3px 6px
+    ) !important;
+  }
+
+  .dsm-si-bar-limit {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 2px;
+    margin-left: -1px;
+    background: #222;
+    pointer-events: none;
+  }
+
+  .dsm-si-zoom-connector {
+    display: block;
+    width: 100%;
+    height: 12px;
+    background: rgba(0, 0, 0, 0.07);
+  }
+
+  .dsm-si-legend {
+    margin-top: 6px;
+  }
+
+  .dsm-si-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 20px;
+    font-size: 12px;
+
+    .dsm-si-label {
+      flex: 1;
+      min-width: 0;
+      font-size: 12px;
+    }
+  }
+
+  .dsm-si-legend-value {
+    flex-shrink: 0;
+    color: #555;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .dsm-si-swatch {
+    flex-shrink: 0;
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    vertical-align: middle;
+  }
+
+  // ---- loops ----
+
+  .dsm-si-loop {
+    margin-bottom: 6px;
+  }
+
+  .dsm-si-loop-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    .dsm-si-label {
+      flex: 1;
+      min-width: 0;
+      font-size: 12px;
+    }
+  }
+
+  .dsm-si-loop-kind {
+    width: 18px;
+    font-size: 13px;
+    text-align: center;
+    color: #555;
+  }
+
+  // ---- code ----
+
+  .dsm-si-code-toggle {
+    margin-top: 6px;
+  }
+
+  .dsm-si-code {
+    margin-top: 6px;
+    max-height: 300px;
+    overflow: auto;
+    border-radius: 4px;
+    background: #f6f7f9;
+    font-family: Menlo, Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
+  .dsm-si-code-line {
+    padding: 0 6px;
+    border-left: 4px solid transparent;
+    white-space: pre;
+  }
+
+  .dsm-si-reason {
+    margin-bottom: 4px;
+  }
+}
+
+.dsm-si-expression-panel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 4px 40px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #555;
+  background: rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+
+  .dsm-si-swatch {
+    flex-shrink: 0;
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+  }
+}

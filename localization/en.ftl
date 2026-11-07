@@ -386,3 +386,93 @@ quake-pro-opt-dollyMagnification-name = Dolly Multiplier
 quake-pro-opt-dollyMagnification-desc = Heightens the zoom behavior by multiplying (dollying) the camera's viewport slider.
 quake-pro-opt-scalarZoomed-name = Scalar Cancellation
 quake-pro-opt-scalarZoomed-desc = Combats perspective distortion by multiplying (enlarging) the screen viewport (requires max zoom to be fully seen).
+
+## Shader Inspector
+shader-inspector-name = Shader Inspector
+shader-inspector-desc = In 3D, shows what each surface's shader uses: uniform slots, cost, loops, and code, split by the expressions that put them there, and why it gets recompiled.
+shader-inspector-pin = Keep open while you use the graph
+shader-inspector-back = All shaders
+shader-inspector-budget = { $budget } uniform slots per surface
+shader-inspector-budget-tooltip = Sliders and other changeable values each take one slot (a point takes three). A surface's restriction and color function share the slots. Values past the limit are written into the shader, so changing them recompiles it.
+shader-inspector-total-recompiles = { $count ->
+    [one] 1 recompile
+   *[other] { $count } recompiles
+  }
+shader-inspector-recompiles-short = { $count ->
+    [one] recompiled once
+   *[other] recompiled { $count }×
+  }
+shader-inspector-reset = Reset
+shader-inspector-empty = No 3D shaders yet. Desmos makes shaders for color functions that use x, y, or z, and for restrictions on surfaces.
+shader-inspector-pick = Pick a shader to inspect.
+shader-inspector-gone = This shader isn't in the graph anymore.
+shader-inspector-untraced = Desmos internals
+shader-inspector-untraced-shader = Reload the graph to see which expressions each part of this shader comes from.
+shader-inspector-uniforms = { $used } / { $budget } slots
+shader-inspector-uniforms-head = { $used } / { $budget } slots{ $baked ->
+    [0] {""}
+   *[other] , { $baked } past the limit
+}
+shader-inspector-overflow = { $count } past the limit
+shader-inspector-cost-short = cost { $cost }
+shader-inspector-color-function = Color function:{" "}
+shader-inspector-tile-slots = Uniform slots
+shader-inspector-tile-cost = Cost estimate
+shader-inspector-tile-steps = Loop steps per pixel
+shader-inspector-tile-lines = Lines of GLSL
+shader-inspector-tile-recompiles = Recompiles
+shader-inspector-tile-programs = Shaders / surfaces
+shader-inspector-section-uniforms = Uniform slots
+shader-inspector-group-list = { $list }, { $slots } slots
+shader-inspector-group-single = { $count ->
+    [one] 1 value
+   *[other] { $count } values
+  }
+shader-inspector-free = { $count } free
+shader-inspector-singles = Single values, zoomed in: { $count ->
+    [one] 1 slot
+   *[other] { $count } slots
+  }
+shader-inspector-section-cost-restriction = Restriction cost
+shader-inspector-section-cost-color = Color function cost
+shader-inspector-section-loops = Sums, products, and list operations
+shader-inspector-steps = { $steps } steps per pixel
+shader-inspector-loop = { $terms } terms × { $body } cost each = { $cost } · runs { $runs }× per pixel
+shader-inspector-loop-list = { $terms } elements × { $body } cost each = { $cost } · runs { $runs }× per pixel
+shader-inspector-loop-terms-tooltip = { $terms } of at most { $limit } terms
+shader-inspector-loops-caption = Each sum or product can have at most { $limit } terms. Nested ones multiply: the inner one runs once per term of the outer one, and its cost counts that many times.
+shader-inspector-section-glsl = Generated GLSL
+shader-inspector-glsl-share = { $lines ->
+    [one] 1 line
+   *[other] { $lines } lines
+  }, { $chars } characters
+shader-inspector-helpers = Helper functions: { $helpers }
+shader-inspector-glsl-caption = Bigger shaders take longer to compile. Desmos adds its own lighting and helper code around this, the same for every surface.
+shader-inspector-show-code = Show code
+shader-inspector-hide-code = Hide code
+shader-inspector-section-recompiles = Recompiles
+shader-inspector-no-recompiles = No recompiles since the graph loaded or the counts were reset.
+shader-inspector-panel-slots = { $count ->
+    [one] 1 slot
+   *[other] { $count } slots
+  }
+shader-inspector-panel-lines = { $count ->
+    [one] 1 line
+   *[other] { $count } lines
+  }
+shader-inspector-panel-owner = The inspected shader
+shader-inspector-panel-none = Used by the inspected shader
+shader-inspector-reason-baked = Values past the limit changed ({ $count })
+shader-inspector-reason-baked-tooltip = Values past the slot limit are written into the shader, so changing them makes a new shader.
+shader-inspector-reason-list-length = A list changed length ({ $count })
+shader-inspector-reason-list-length-tooltip = List lengths are part of the shader, so a list whose length depends on a slider recompiles whenever its length changes.
+shader-inspector-reason-structure = The shader's code changed ({ $count })
+shader-inspector-reason-structure-tooltip = An edit, or a piecewise whose condition only depends on sliders flipping between branches that use x, y, or z. Desmos only compiles the branch it picks.
+shader-inspector-reason-constant = A typed number changed ({ $count })
+shader-inspector-reason-constant-tooltip = Numbers typed into an expression are written into the shader. Use a slider instead to change it without recompiling.
+shader-inspector-error-color-cost = Color function over the cost limit of 10,000. Nested sums multiply: each sum's terms times what's inside it.
+shader-inspector-error-restriction-cost = Restriction over the cost limit of 10,000. Nested sums multiply: each sum's terms times what's inside it.
+shader-inspector-error-inequality-cost = Inequality over the shader cost limit of 10,000.
+shader-inspector-error-long-loop = A sum or product in a shader can have at most 1,000 terms. Each one is checked on its own, using current slider values.
+shader-inspector-error-variable-loop = A sum or product in a shader needs bounds that don't depend on x, y, z or on another sum's index.
+shader-inspector-error-list-size = Lists in shaders can have at most 100 elements.
