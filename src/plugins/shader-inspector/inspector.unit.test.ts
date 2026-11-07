@@ -1,5 +1,11 @@
 import { attributeLines, shaderReport, usageOf } from "./report";
-import { localStats, metricValue, nodeLatex, resolvePath } from "./tree";
+import {
+  codeOf,
+  localStats,
+  metricValue,
+  nodeLatex,
+  resolvePath,
+} from "./tree";
 import {
   createShaderTagger,
   costCategory,
@@ -267,6 +273,11 @@ describe("report", () => {
     const [one] = a.children;
     expect(one.origin).toBe("1");
     expect(one.self.slots).toEqual({ single: 1 });
+    // The GLSL from the sum is the lines of the parts in it, in order.
+    expect(codeOf(sum).map((l) => l.text)).toEqual([
+      "_1=(_DCG_SC_0);",
+      "_2=sin(_1);",
+    ]);
     // What `a` adds, counting the definition inlined into it.
     expect(localStats(a).slots).toEqual({ single: 1 });
     expect(

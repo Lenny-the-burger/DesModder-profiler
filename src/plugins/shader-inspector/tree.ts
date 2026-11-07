@@ -55,8 +55,19 @@ export interface SpanNode {
   /** Sums, products and list operations that start at this node. */
   loops: NodeLoop[];
   lists: ListInfo[];
+  /** Lines of GLSL that come from this node itself. */
+  lines: CodeLine[];
   children: SpanNode[];
 }
+
+export interface CodeLine {
+  /** Position in the shader: restriction lines, then color lines. */
+  order: number;
+  text: string;
+}
+
+/** Lines in a shader part before the next part's start. */
+const PART_LINES = 1e7;
 
 const emptyStats = (): Stats => ({
   cost: {},
@@ -110,6 +121,7 @@ export function newNode(
     total: emptyStats(),
     loops: [],
     lists: [],
+    lines: [],
     children: [],
     ...extra,
   };
@@ -225,10 +237,12 @@ export function addShader(
   });
 
   // GLSL, a line at a time, counting the newline.
-  for (const { text, frame } of lineFrames(shader))
-    add(nodeOf(frame), (s) => {
-      s.chars += text.length + 1;
-    });
+  const partStart = partNode.part === "restriction" ? 0 : PART_LINES;
+  lineFrames(shader).forEach(({ text, frame }, i) => {
+    const n = nodeOf(frame);
+    n.self.chars += text.length + 1;
+    n.lines.push({ order: partStart + i, text });
+  });
 
   // Loops.
   const walk = (ls: WorkerLoop[], outer: number) => {
@@ -274,6 +288,7 @@ function collapse(node: SpanNode) {
     node.children = only.children;
     node.loops = only.loops;
     node.lists = only.lists;
+    node.lines = only.lines;
   }
 }
 
@@ -329,4 +344,15 @@ export function localStats(node: SpanNode): Stats {
   for (const c of node.children)
     if (c.input !== node.input) addStats(s, c.total);
   return s;
+}
+
+/** The GLSL compiled from a node and everything in it, in shader order. */
+export function codeOf(node: SpanNode): (CodeLine & { node: SpanNode })[] {
+  const out: (CodeLine & { node: SpanNode })[] = [];
+  const walk = (n: SpanNode) => {
+    for (const l of n.lines) out.push({ ...l, node: n });
+    n.children.forEach(walk);
+  };
+  walk(node);
+  return out.sort((a, b) => a.order - b.order);
 }

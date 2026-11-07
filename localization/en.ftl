@@ -525,3 +525,5 @@ shader-inspector-flame-metric = What to measure
 shader-inspector-flame-close = Close
 shader-inspector-flame-empty = Nothing in this shader adds to this.
 shader-inspector-flame-hint = Hover over a bar to see what it adds. Click it to zoom in and see it in detail; Esc zooms back out.
+shader-inspector-show-compiled = Show compiled code
+shader-inspector-hide-compiled = Hide compiled code

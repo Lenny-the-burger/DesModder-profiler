@@ -21,6 +21,7 @@ import {
   METRICS,
   Metric,
   SpanNode,
+  codeOf,
   dominant,
   localStats,
   metricValue,
@@ -94,6 +95,7 @@ export class DetailView extends Component<{
               {this.extras()}
               {this.partsList()}
               {this.buttons()}
+              {this.code()}
             </div>
           )}
         </If>
@@ -431,6 +433,47 @@ export class DetailView extends Component<{
     );
   }
 
+  /** The GLSL compiled from this part, each line marked by its expression. */
+  code() {
+    const lines = () => codeOf(this.node());
+    return (
+      <If predicate={() => this.si().showDetailCode && lines().length > 0}>
+        {() => (
+          <div>
+            <div class="dsm-si-line dsm-si-dim">
+              {() =>
+                format("shader-inspector-glsl-share", {
+                  chars: fmt(this.node().total.chars),
+                  lines: lines().length,
+                })
+              }
+            </div>
+            <div class="dsm-si-code">
+              <For
+                each={() => lines().map((l, i) => ({ ...l, i }))}
+                key={(l: { i: number; order: number }) => `${l.order}`}
+              >
+                {(l: () => { text: string; node: SpanNode }) => (
+                  <div
+                    class="dsm-si-code-line"
+                    title={() => nodeName(l().node)}
+                    style={() => ({
+                      "border-left-color": this.si().originColor(
+                        l().node.origin
+                      ),
+                    })}
+                  >
+                    {() => l().text}
+                  </div>
+                )}
+              </For>
+            </div>
+          </div>
+        )}
+      </If>
+    );
+  }
+
   buttons() {
     return (
       <div class="dsm-si-detail-buttons">
@@ -444,6 +487,22 @@ export class DetailView extends Component<{
               }}
             >
               {format("shader-inspector-go-to")}
+            </Button>
+          )}
+        </If>
+        <If predicate={() => this.node().total.chars > 0}>
+          {() => (
+            <Button
+              color="light-gray"
+              onTap={() => this.si().toggleDetailCode()}
+            >
+              {() =>
+                format(
+                  this.si().showDetailCode
+                    ? "shader-inspector-hide-compiled"
+                    : "shader-inspector-show-compiled"
+                )
+              }
             </Button>
           )}
         </If>

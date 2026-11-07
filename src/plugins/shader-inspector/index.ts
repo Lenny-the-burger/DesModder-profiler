@@ -141,6 +141,8 @@ export default class ShaderInspector extends PluginController {
   detailPath: string[] = [];
   /** Whether the menu shows the detail page. */
   detailOpen = false;
+  /** Whether the detail view shows the GLSL compiled from its part. */
+  showDetailCode = false;
   /** What the detail view and flame graph measure. */
   metric: Metric = "cost";
   readonly flame = new FlameGraphController(this);
@@ -402,6 +404,12 @@ export default class ShaderInspector extends PluginController {
     this.metric = metric;
     // The hovered bar was measured in the old metric.
     this.flame.hovered = undefined;
+    this.updateView();
+    this.flame.refresh();
+  }
+
+  toggleDetailCode() {
+    this.showDetailCode = !this.showDetailCode;
     this.updateView();
     this.flame.refresh();
   }
