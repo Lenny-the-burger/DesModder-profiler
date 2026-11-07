@@ -318,6 +318,60 @@
     vertical-align: middle;
   }
 
+  .dsm-si-head-with-help {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .dsm-si-help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 600;
+    color: #fff;
+    background: #999;
+    cursor: pointer;
+
+    &:hover,
+    &.dsm-selected {
+      background: @ok;
+    }
+  }
+
+  .dsm-si-help-box {
+    margin: 2px 0 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: #444;
+    background: rgba(45, 112, 179, 0.07);
+  }
+
+  .dsm-si-help-intro {
+    margin: 2px 0 4px;
+  }
+
+  .dsm-si-help-row {
+    display: flex;
+    gap: 6px;
+    padding: 3px 2px;
+    border-top: 1px solid rgba(0, 0, 0, 0.07);
+  }
+
+  .dsm-si-help-cost {
+    flex-shrink: 0;
+    width: 44px;
+    font-weight: 600;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
   // ---- loops ----
 
   .dsm-si-loop {

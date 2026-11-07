@@ -11,7 +11,13 @@ import {
   recompileReason,
   surfaceBudget,
 } from "./analyze";
-import { InspectedShader, Origin, ShaderReport, shaderReport } from "./report";
+import {
+  InspectedShader,
+  Origin,
+  ShaderPart,
+  ShaderReport,
+  shaderReport,
+} from "./report";
 import { ItemModel } from "#globals";
 
 /** Errors Desmos gives when a shader would go over one of its limits. */
@@ -119,6 +125,8 @@ export default class ShaderInspector extends PluginController {
   /** The surface whose shader is being inspected. */
   selectedId: string | undefined;
   showGlsl = false;
+  /** The part whose cost explanation is open, if any. */
+  costHelp: ShaderPart | undefined = undefined;
   private cachedReport: ShaderReport | undefined;
 
   afterEnable() {
@@ -375,6 +383,11 @@ export default class ShaderInspector extends PluginController {
 
   openMenu() {
     this.dsm.pillboxMenus?.toggleMenu("dsm-shader-inspector-menu", true);
+  }
+
+  toggleCostHelp(part: ShaderPart) {
+    this.costHelp = this.costHelp === part ? undefined : part;
+    this.updateView();
   }
 
   toggleGlsl() {

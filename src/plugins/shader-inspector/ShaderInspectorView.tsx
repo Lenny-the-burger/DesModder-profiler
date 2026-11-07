@@ -52,6 +52,43 @@ function shortLabel(si: ShaderInspector, origin: Origin) {
   return text.length > 40 ? text.slice(0, 39) + "…" : text;
 }
 
+/** Desmos's cost per instruction, as rows of the cost explanation. */
+type CostRow = readonly [string, string];
+const COST_ROWS: readonly CostRow[] = [
+  ["0", "free"],
+  ["1", "cheap"],
+  ["5", "costly"],
+  ["5 × n", "reduction"],
+  ["n", "list"],
+  ["∞", "never"],
+];
+
+/** How Desmos estimates a shader's cost, for the "?" next to it. */
+function costHelp(limit: () => number) {
+  return (
+    <div class="dsm-si-help-box">
+      <div class="dsm-si-help-intro">
+        {() =>
+          format("shader-inspector-cost-help-intro", { limit: fmt(limit()) })
+        }
+      </div>
+      <div class="dsm-si-help-table">
+        <For each={() => COST_ROWS} key={(r: CostRow) => r[1]}>
+          {(r: () => CostRow) => (
+            <div class="dsm-si-help-row">
+              <span class="dsm-si-help-cost">{() => r()[0]}</span>
+              <span>{() => format(`shader-inspector-cost-row-${r()[1]}`)}</span>
+            </div>
+          )}
+        </For>
+      </div>
+      <div class="dsm-si-help-intro">
+        {format("shader-inspector-cost-help-loops")}
+      </div>
+    </div>
+  );
+}
+
 /** A segmented bar: each segment's width is its share of `scale`. */
 function bar(
   si: ShaderInspector,
@@ -645,8 +682,20 @@ export class ShaderInspectorView extends Component<{
     return (
       <div class="dsm-si-section">
         <div class="dsm-si-section-head">
-          <span>
+          <span class="dsm-si-head-with-help">
             {() => format(`shader-inspector-section-cost-${p().part}`)}
+            <Tooltip tooltip={format("shader-inspector-cost-help")} gravity="s">
+              <span
+                class={() => ({
+                  "dsm-si-help": true,
+                  "dsm-selected": this.si().costHelp === p().part,
+                })}
+                role="button"
+                onTap={() => this.si().toggleCostHelp(p().part)}
+              >
+                ?
+              </span>
+            </Tooltip>
           </span>
           <span
             class={() => ({
@@ -657,6 +706,9 @@ export class ShaderInspectorView extends Component<{
             {() => `${fmt(p().cost)} / ${fmt(p().costLimit)}`}
           </span>
         </div>
+        <If predicate={() => this.si().costHelp === p().part}>
+          {() => costHelp(() => p().costLimit)}
+        </If>
         {bar(this.si(), segments, scale, () => p().costLimit)}
         <div class="dsm-si-legend">
           <For
