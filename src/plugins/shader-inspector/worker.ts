@@ -167,29 +167,29 @@ const plainName = (latex: string) =>
 const IDENTIFIER =
   /^(?:\[a-zA-Z]+|[a-zA-Z])(?:_\{[a-zA-Z0-9]+\}|_[a-zA-Z0-9])?$/;
 /** Frames to climb looking for a list's name. */
-const MAX_NAME_DEPTH = 4;
+const MAX_NAME_DEPTH = 8;
 /** Values a list with no name is shown by. */
 const PREVIEW_VALUES = 3;
 
 /**
- * The name of the list a frame is part of: the variable it is, or the one it
- * is the definition of.
+ * The name of the list a frame holds: the variable it is, or the one whose
+ * whole definition it is. A function's whole body gives what the call to it
+ * gives, so the name is where it is called.
  */
 export function listName(frame: Frame | undefined): string | undefined {
   for (let f = frame, i = 0; f && i < MAX_NAME_DEPTH; f = f.parent, i++) {
     const text = f.input.slice(f.start, f.end).trim();
     if (IDENTIFIER.test(text)) return plainName(text);
     const def = /^(.*?)=/.exec(f.input);
-    const lhs = def?.[1].trim();
-    // Only the list's own frame: the statement around a use of it is some
-    // other expression's definition.
-    if (
-      i === 0 &&
-      lhs !== undefined &&
-      IDENTIFIER.test(lhs) &&
-      (f.start === 0 || f.start === def![0].length)
-    )
-      return plainName(lhs);
+    if (!def) return undefined;
+    // Only the whole definition: a part of one is something else.
+    const whole =
+      f.input.slice(f.end).trim() === "" &&
+      (f.start === 0 || f.input.slice(def[0].length, f.start).trim() === "");
+    if (!whole) return undefined;
+    const lhs = def[1].trim();
+    if (IDENTIFIER.test(lhs)) return plainName(lhs);
+    if (!lhs.includes("(")) return undefined;
   }
   return undefined;
 }
@@ -266,8 +266,8 @@ export function loopSymbols(
     const access = chunk.getInstruction(i);
     if (!access || !LIST_ACCESS.has(access.type)) continue;
     if (access.args?.[1] !== index) continue;
-    const name = listLabel(chunk, access.args[0], nameValues);
-    if (name !== undefined) lists.add(name);
+    for (const name of listLabels(chunk, access.args[0], nameValues))
+      lists.add(name);
   }
   return [...lists];
 }
@@ -312,12 +312,15 @@ export interface ShaderSourceInfo {
   listValues?: number[][];
 }
 
-/** What a list in a chunk reads as: its variable, or its first few values. */
-export function listLabel(
+/**
+ * What a list in a chunk reads as: its variable, what the broadcast it comes
+ * from runs over, or its first few values.
+ */
+export function listLabels(
   chunk: Chunk,
   index: number,
   nameValues: NameValues = previewValues
-): string | undefined {
+): string[] {
   const list = chunk.getInstruction(index);
   if (list?.type === BROADCAST_RESULT) {
     // The result of a broadcast goes by what the broadcast runs over.
@@ -328,13 +331,13 @@ export function listLabel(
       start === undefined ? undefined : chunk.getInstruction(start);
     if (start !== undefined && broadcast?.type === 23) {
       const over = loopSymbols(broadcast, chunk, start, nameValues);
-      if (over.length > 0) return over.join(", ");
+      if (over.length > 0) return over;
     }
   }
   const name = listName(list?.dsmSrc);
-  if (name !== undefined) return name;
+  if (name !== undefined) return [name];
   const values = listValues(list);
-  return values && nameValues(values);
+  return values ? [nameValues(values)] : [];
 }
 
 /** What a reduction costs per element, and which argument is its list. */
@@ -359,9 +362,8 @@ export function reductionElements(
   const terms = cost / each;
   if (!(terms > 0) || !isFinite(terms)) return undefined;
   const list = instr.args?.[arg];
-  const name =
-    list === undefined ? undefined : listLabel(chunk, list, nameValues);
-  return { terms, symbols: name === undefined ? [] : [name] };
+  const symbols = list === undefined ? [] : listLabels(chunk, list, nameValues);
+  return { terms, symbols };
 }
 
 /** The elements of a list an operation goes through. */

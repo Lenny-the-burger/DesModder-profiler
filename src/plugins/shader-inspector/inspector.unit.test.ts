@@ -15,6 +15,7 @@ import {
   foldSource,
   Frame,
   LIST_TOKEN,
+  listName,
   loopSymbols,
   ShaderSourceInfo,
 } from "./worker";
@@ -204,6 +205,17 @@ describe("createShaderTagger", () => {
       "[0, 1, 2, ...]",
       "m",
     ]);
+  });
+
+  test("names a list made by a function after what it is assigned to", () => {
+    const def = "n=u(P)";
+    const call = fr(def, 2, 6, fr(def));
+    const body = fr("u(x)=\\frac{x}{2}", 5, 16, call);
+    expect(listName(body)).toBe("n");
+    // A part of a definition isn't the variable.
+    expect(listName(fr("c=total(L)+1", 2, 10, fr("c=total(L)+1")))).toBe(
+      undefined
+    );
   });
 
   test("counts a reduction's elements like a loop", () => {

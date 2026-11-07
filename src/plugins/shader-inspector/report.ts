@@ -283,7 +283,10 @@ export function withListNames(
     const values = info.listValues?.[Number(s.slice(LIST_TOKEN.length))];
     return values ? (nameList?.(values) ?? previewValues(values)) : "list";
   };
-  const names = (ss: string[] | undefined) => (ss ?? []).map(name);
+  // A point list's coordinates are lists of their own, all with its name.
+  const names = (ss: string[] | undefined) => [
+    ...new Set((ss ?? []).map(name)),
+  ];
   const loops = (ls: WorkerLoop[]): WorkerLoop[] =>
     ls.map((l) => ({
       ...l,
