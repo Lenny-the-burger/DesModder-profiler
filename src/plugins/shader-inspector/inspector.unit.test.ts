@@ -1,4 +1,4 @@
-import { attributeLines, shaderReport, usageOf } from "./report";
+import { attributeLines, shaderReport, usageOf, withListNames } from "./report";
 import {
   codeOf,
   localStats,
@@ -14,6 +14,7 @@ import {
   foldOf,
   foldSource,
   Frame,
+  LIST_TOKEN,
   loopSymbols,
   ShaderSourceInfo,
 } from "./worker";
@@ -435,6 +436,35 @@ describe("report", () => {
       "tan() (×2)",
     ]);
     expect(repeatsText(stats)).toBe("15 × 100 (n) + 10");
+  });
+
+  test("names a list after a variable with the same values", () => {
+    const loop = (symbols: string[]) => ({
+      id: 0,
+      kind: "list" as const,
+      terms: 5,
+      symbols,
+      source: -1,
+      bodyCost: 1,
+      children: [],
+    });
+    const shader = {
+      source: "return 1.0;",
+      shaderUniforms: [],
+      costEstimate: 5,
+      dsmInfo: info({
+        loops: [loop([`${LIST_TOKEN}0`]), loop([`${LIST_TOKEN}1`])],
+        listValues: [
+          [1, 2, 3, 4, 5],
+          [5, 4, 3, 2, 1],
+        ],
+      }),
+    };
+    const named = withListNames(shader, (v) => (v[0] === 1 ? "l" : undefined));
+    expect(named.dsmInfo!.loops.map((l) => l.symbols)).toEqual([
+      ["l"],
+      ["[5, 4, 3, ...]"],
+    ]);
   });
 
   test("keeps nested loops apart", () => {

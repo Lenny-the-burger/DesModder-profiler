@@ -20,6 +20,8 @@ import {
 } from "./report";
 import { FlameGraphController } from "./FlameView";
 import { Metric, SpanNode, resolvePath } from "./tree";
+import { latexToText } from "./text";
+import { sameValues } from "./worker";
 import { ItemModel } from "#globals";
 
 /** Errors Desmos gives when a shader would go over one of its limits. */
@@ -419,6 +421,7 @@ export default class ShaderInspector extends PluginController {
       },
       budget: this.budget,
       resolve: this.resolver(),
+      nameList: this.listNamer(),
     });
     return this.cachedReport;
   }
@@ -486,6 +489,37 @@ export default class ShaderInspector extends PluginController {
   }
 
   /** Map the LaTeX the worker recorded back to expression ids. */
+  /** Names lists by the variables that hold the same values. */
+  private listNamer() {
+    const byLength = new Map<number, { name: string; values: number[] }[]>();
+    const analysis = (
+      this.calc as unknown as {
+        expressionAnalysis: Record<
+          string,
+          { evaluation?: { type?: string; value?: unknown } } | undefined
+        >;
+      }
+    ).expressionAnalysis;
+    for (const m of this.cc.getAllItemModels()) {
+      const { latex } = m as { latex?: string };
+      const lhs = latex && /^([^=]+)=/.exec(latex)?.[1];
+      if (
+        !lhs ||
+        !/^(?:\\[a-zA-Z]+|[a-zA-Z])(?:_\{?[a-zA-Z0-9]+\}?)?$/.test(lhs)
+      )
+        continue;
+      const ev = analysis?.[m.id]?.evaluation;
+      if (ev?.type !== "ListOfNumber" || !Array.isArray(ev.value)) continue;
+      const values = ev.value as number[];
+      let list = byLength.get(values.length);
+      if (!list) byLength.set(values.length, (list = []));
+      list.push({ name: latexToText(lhs), values });
+    }
+    return (values: number[]) =>
+      byLength.get(values.length)?.find((l) => sameValues(l.values, values))
+        ?.name;
+  }
+
   private resolver() {
     const byLatex = new Map<string, string>();
     for (const m of this.cc.getAllItemModels()) {

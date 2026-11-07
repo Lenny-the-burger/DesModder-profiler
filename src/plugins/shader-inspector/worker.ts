@@ -194,32 +194,49 @@ export function listName(frame: Frame | undefined): string | undefined {
   return undefined;
 }
 
-const previewNumber = (v: unknown) =>
+const toNumber = (v: unknown): number | undefined =>
   typeof v === "number"
-    ? String(Math.round(v * 1000) / 1000)
+    ? v
     : typeof v === "object" &&
         v !== null &&
         typeof (v as { n?: unknown }).n === "number" &&
         typeof (v as { d?: unknown }).d === "number"
-      ? String(
-          Math.round(((v as { n: number }).n / (v as { d: number }).d) * 1000) /
-            1000
-        )
+      ? (v as { n: number }).n / (v as { d: number }).d
       : undefined;
 
-/** A list with no name, by its first few values: `[0, 1, 2, ...]`. */
-export function listPreview(
+/** The numbers in a constant list, if it is one. */
+export function listValues(
   instr: Instruction | undefined
-): string | undefined {
+): number[] | undefined {
   if (instr?.type !== 1 || !Array.isArray(instr.value)) return undefined;
-  const values = instr.value.slice(0, PREVIEW_VALUES).map(previewNumber);
+  const values = instr.value.map(toNumber);
   if (values.length === 0 || values.some((v) => v === undefined))
     return undefined;
-  const more = instr.value.length > PREVIEW_VALUES ? ", ..." : "";
-  return `[${values.join(", ")}${more}]`;
+  return values as number[];
+}
+
+/** A list with no name, by its first few values: `[0, 1, 2, ...]`. */
+export function previewValues(values: number[]) {
+  const shown = values
+    .slice(0, PREVIEW_VALUES)
+    .map((v) => String(Math.round(v * 1000) / 1000));
+  const more = values.length > PREVIEW_VALUES ? ", ..." : "";
+  return `[${shown.join(", ")}${more}]`;
 }
 
 const LIST_ACCESS = new Set([39, 40, 41]);
+
+export const sameValues = (a: number[], b: number[]) =>
+  a.length === b.length && a.every((v, i) => v === b[i]);
+
+/** What to call a list with no name: by default, its first few values. */
+export type NameValues = (values: number[]) => string;
+
+/**
+ * Stands in for a list with no name, so the main thread can name it after a
+ * variable with the same values.
+ */
+export const LIST_TOKEN = "\u0000list:";
 
 /**
  * What a loop runs over, as it reads in the expression: the variable of a sum,
@@ -228,7 +245,8 @@ const LIST_ACCESS = new Set([39, 40, 41]);
 export function loopSymbols(
   instr: Instruction,
   chunk?: Chunk,
-  index?: number
+  index?: number,
+  nameValues: NameValues = previewValues
 ): string[] {
   const raw =
     instr.type === 19
@@ -248,7 +266,7 @@ export function loopSymbols(
     const access = chunk.getInstruction(i);
     if (!access || !LIST_ACCESS.has(access.type)) continue;
     if (access.args?.[1] !== index) continue;
-    const name = listLabel(chunk, access.args[0]);
+    const name = listLabel(chunk, access.args[0], nameValues);
     if (name !== undefined) lists.add(name);
   }
   return [...lists];
@@ -290,10 +308,16 @@ export interface ShaderSourceInfo {
    */
   cost: CostEntry[];
   loops: WorkerLoop[];
+  /** Values of each list `LIST_TOKEN` + index stands for. */
+  listValues?: number[][];
 }
 
 /** What a list in a chunk reads as: its variable, or its first few values. */
-export function listLabel(chunk: Chunk, index: number): string | undefined {
+export function listLabel(
+  chunk: Chunk,
+  index: number,
+  nameValues: NameValues = previewValues
+): string | undefined {
   const list = chunk.getInstruction(index);
   if (list?.type === BROADCAST_RESULT) {
     // The result of a broadcast goes by what the broadcast runs over.
@@ -303,11 +327,14 @@ export function listLabel(chunk: Chunk, index: number): string | undefined {
     const broadcast =
       start === undefined ? undefined : chunk.getInstruction(start);
     if (start !== undefined && broadcast?.type === 23) {
-      const over = loopSymbols(broadcast, chunk, start);
+      const over = loopSymbols(broadcast, chunk, start, nameValues);
       if (over.length > 0) return over.join(", ");
     }
   }
-  return listName(list?.dsmSrc) ?? listPreview(list);
+  const name = listName(list?.dsmSrc);
+  if (name !== undefined) return name;
+  const values = listValues(list);
+  return values && nameValues(values);
 }
 
 /** What a reduction costs per element, and which argument is its list. */
@@ -320,7 +347,8 @@ const REDUCTION_COST: Partial<Record<string, { each: number; arg: number }>> = {
 export function reductionElements(
   chunk: Chunk,
   instr: Instruction | undefined,
-  cost: number
+  cost: number,
+  nameValues: NameValues = previewValues
 ): Elements | undefined {
   if (instr?.type !== NATIVE_FUNCTION || !REDUCTIONS.has(instr.symbol ?? ""))
     return undefined;
@@ -331,7 +359,8 @@ export function reductionElements(
   const terms = cost / each;
   if (!(terms > 0) || !isFinite(terms)) return undefined;
   const list = instr.args?.[arg];
-  const name = list === undefined ? undefined : listLabel(chunk, list);
+  const name =
+    list === undefined ? undefined : listLabel(chunk, list, nameValues);
   return { terms, symbols: name === undefined ? [] : [name] };
 }
 
@@ -374,6 +403,9 @@ interface CostCollection {
   roots: WorkerLoop[];
   loops: number;
   stack: { loop: WorkerLoop; multiplier: number }[];
+  /** Values of the lists with no name, which `LIST_TOKEN` + index stand for. */
+  listValues: number[][];
+  nameValues: NameValues;
 }
 
 /** Instructions to look through for where a folded value came from. */
@@ -531,6 +563,13 @@ export function createShaderTagger() {
         roots: [],
         loops: 0,
         stack: [],
+        listValues: [],
+        nameValues: (values) => {
+          const c = costs!;
+          let i = c.listValues.findIndex((v) => sameValues(v, values));
+          if (i < 0) i = c.listValues.push(values) - 1;
+          return `${LIST_TOKEN}${i}`;
+        },
       };
       try {
         return estimate();
@@ -551,7 +590,7 @@ export function createShaderTagger() {
       const category = costCategory(instr, cost);
       const op = opName(instr);
       const loop = top?.loop.id ?? -1;
-      const elements = reductionElements(chunk, instr, cost);
+      const elements = reductionElements(chunk, instr, cost, c.nameValues);
       const key = `${category}|${op}|${loop}|${elements ? `${elements.terms}:${elements.symbols.join(",")}` : ""}`;
       let t = tallies.get(key);
       if (!t)
@@ -577,7 +616,7 @@ export function createShaderTagger() {
       if (!c || c.chunk !== chunk) return body();
       const loop: WorkerLoop = {
         id: c.loops++,
-        symbols: loopSymbols(instr, chunk, index),
+        symbols: loopSymbols(instr, chunk, index, c.nameValues),
         kind:
           instr.type === 19
             ? instr.callData?.type === "product"
@@ -666,6 +705,7 @@ export function createShaderTagger() {
         instructions: chunk.instructions.map((i) => id(i?.dsmSrc)),
         cost: costs,
         loops: cost ? loops(cost.roots) : [],
+        listValues: cost?.listValues ?? [],
       };
     },
   };

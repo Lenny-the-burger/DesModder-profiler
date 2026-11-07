@@ -20,6 +20,7 @@ import {
   listOfUniforms,
   newNode,
 } from "./tree";
+import { LIST_TOKEN, previewValues } from "./worker";
 import type { LoopKind, ShaderSourceInfo, WorkerLoop } from "./worker";
 
 export type ShaderPart = "restriction" | "color";
@@ -264,6 +265,44 @@ function uniformGroups(
   return { singles: [...singles.values()], lists: listGroups };
 }
 
+/** Name a list by its values, if a variable holds the same ones. */
+export type NameList = (values: number[]) => string | undefined;
+
+/**
+ * The shader with each list the worker couldn't name called after a variable
+ * holding the same values, or else by its first few values.
+ */
+export function withListNames(
+  shader: InspectedShader,
+  nameList: NameList | undefined
+): InspectedShader {
+  const info = shader.dsmInfo;
+  if (!info) return shader;
+  const name = (s: string) => {
+    if (!s.startsWith(LIST_TOKEN)) return s;
+    const values = info.listValues?.[Number(s.slice(LIST_TOKEN.length))];
+    return values ? (nameList?.(values) ?? previewValues(values)) : "list";
+  };
+  const names = (ss: string[] | undefined) => (ss ?? []).map(name);
+  const loops = (ls: WorkerLoop[]): WorkerLoop[] =>
+    ls.map((l) => ({
+      ...l,
+      symbols: names(l.symbols),
+      children: loops(l.children),
+    }));
+  return {
+    ...shader,
+    dsmInfo: {
+      ...info,
+      loops: loops(info.loops),
+      cost: info.cost.map(([...e]) => {
+        if (e[7]) e[7] = { ...e[7], symbols: names(e[7].symbols) };
+        return e;
+      }),
+    },
+  };
+}
+
 export function shaderReport(opts: {
   id: string;
   colorId: string | undefined;
@@ -275,8 +314,17 @@ export function shaderReport(opts: {
   };
   budget: number;
   resolve: ResolveSource;
+  nameList?: NameList;
 }): ShaderReport {
-  const { id, colorId, shaders, budget, resolve } = opts;
+  const { id, colorId, budget, resolve } = opts;
+  const shaders = {
+    ...opts.shaders,
+    restriction:
+      opts.shaders.restriction &&
+      withListNames(opts.shaders.restriction, opts.nameList),
+    color:
+      opts.shaders.color && withListNames(opts.shaders.color, opts.nameList),
+  };
   const material = analyzeMaterial(shaders, budget);
   const parts: PartReport[] = [];
   const singles: UniformGroup[] = [];
