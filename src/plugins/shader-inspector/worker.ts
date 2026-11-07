@@ -85,23 +85,16 @@ function isChangeable(instr: Instruction | undefined) {
   return instr?.type === 1 && (instr.mobility ?? 0) > 0;
 }
 
-function size(instr: Instruction) {
-  return Array.isArray(instr.value) ? instr.value.length : 0;
+/** What a fold is about to push a constant for. */
+export interface Fold {
+  /** Source of the popped instruction. */
+  own: Source | undefined;
+  /** Changeable constants it was computed from, nearest first. */
+  inputs: Instruction[];
 }
 
-/**
- * The expression a value folded from `last` belongs to: the changeable
- * constant it was computed from (the biggest list, if several), looking
- * through its arguments and theirs. A typed number says less about where a
- * value came from than one that can change, so those only count when nothing
- * else is found.
- */
-export function foldSource(
-  chunk: Chunk,
-  last: Instruction
-): Source | undefined {
-  let best: Instruction | undefined;
-  let fallback: Source | undefined;
+export function foldOf(chunk: Chunk, last: Instruction): Fold {
+  const inputs: Instruction[] = [];
   const seen = new Set<number>();
   const queue = [...(last.args ?? [])];
   while (queue.length > 0 && seen.size < MAX_FOLD_SEARCH) {
@@ -110,22 +103,42 @@ export function foldSource(
     seen.add(a);
     const instr = chunk.instructions[a];
     if (!instr) continue;
-    if (isChangeable(instr) && instr.dsmSrc !== undefined) {
-      if (!best || size(instr) > size(best)) best = instr;
+    if (isChangeable(instr)) {
+      if (instr.dsmSrc !== undefined) inputs.push(instr);
       continue;
     }
-    fallback ??= instr.dsmSrc;
     queue.push(...(instr.args ?? []));
   }
-  return best?.dsmSrc ?? fallback ?? last.dsmSrc;
+  return { own: last.dsmSrc, inputs };
+}
+
+const isNumbers = (v: unknown): v is number[] =>
+  Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "number");
+const isPoints = (v: unknown): v is unknown[] =>
+  Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "object");
+
+/**
+ * The expression a folded constant belongs to. Usually the one the folded
+ * instruction came from, but a list of numbers taken out of a list of points
+ * of the same length (one coordinate of each, so it can go in a shader) is
+ * still the point list.
+ */
+export function foldSource(fold: Fold, value: unknown): Source | undefined {
+  if (isNumbers(value)) {
+    const points = fold.inputs.find(
+      (i) => isPoints(i.value) && i.value.length === value.length
+    );
+    if (points) return points.dsmSrc;
+  }
+  return fold.own;
 }
 
 export function createShaderTagger() {
   let current: Source | undefined;
   /** Source of the instruction being copied, if any. */
   let copySource: Source | undefined;
-  /** Source for the constant a fold is about to push. */
-  let folded: Source | undefined;
+  /** The fold about to push a constant, if any. */
+  let folded: Fold | undefined;
   const records = new WeakMap<Emitter, EmitterRecord>();
   const loopSources = new WeakMap<WorkerLoop, Source | undefined>();
   let costs: CostCollection | undefined;
@@ -167,7 +180,7 @@ export function createShaderTagger() {
     popped(chunk: Chunk) {
       const last = chunk.instructions[chunk.instructions.length - 1];
       if (!last) return;
-      folded = foldSource(chunk, last);
+      folded = foldOf(chunk, last);
     },
 
     /** An instruction is pushed onto a chunk. */
@@ -176,7 +189,11 @@ export function createShaderTagger() {
       folded = undefined;
       if (!instr || instr.dsmSrc !== undefined) return;
       const src =
-        (instr.type === 1 ? fold : undefined) ?? copySource ?? current;
+        (instr.type === 1 && fold
+          ? foldSource(fold, instr.value)
+          : undefined) ??
+        copySource ??
+        current;
       if (src !== undefined) {
         instr.dsmSrc = src;
         return;

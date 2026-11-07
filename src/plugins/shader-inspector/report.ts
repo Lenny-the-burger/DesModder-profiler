@@ -161,8 +161,10 @@ function loopRows(
 function helpers(shader: InspectedShader) {
   const fns = shader.shaderFunctions;
   const names = new Set<string>();
-  for (const k of Object.keys(fns?.variadicFxns ?? {})) names.add(k);
-  for (const k of fns?.scalarFxns ?? []) names.add(String(k));
+  // Keys can be a helper's whole GLSL definition; keep just its name.
+  const name = (k: string) => /(\w+)\s*\(/.exec(k)?.[1] ?? k;
+  for (const k of Object.keys(fns?.variadicFxns ?? {})) names.add(name(k));
+  for (const k of fns?.scalarFxns ?? []) names.add(name(String(k)));
   return [...names].sort();
 }
 

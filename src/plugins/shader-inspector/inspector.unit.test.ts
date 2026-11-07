@@ -1,7 +1,12 @@
 import { attributeLines, shaderReport, usageOf } from "./report";
-import { createShaderTagger, foldSource, ShaderSourceInfo } from "./worker";
+import {
+  createShaderTagger,
+  foldOf,
+  foldSource,
+  ShaderSourceInfo,
+} from "./worker";
 
-type Instr = Parameters<typeof foldSource>[1];
+type Instr = Parameters<typeof foldOf>[1];
 
 const chunkOf = (instructions: Instr[]) => ({
   instructions,
@@ -9,33 +14,25 @@ const chunkOf = (instructions: Instr[]) => ({
 });
 
 describe("foldSource", () => {
-  test("prefers the biggest changeable constant among the arguments", () => {
-    const chunk = chunkOf([
-      { type: 1, mobility: 2, value: [1, 2], dsmSrc: "a" },
-      { type: 1, mobility: 2, value: [1, 2, 3, 4], dsmSrc: "b" },
-      { type: 1, mobility: 0, value: 5, dsmSrc: "c" },
-      { type: 8, args: [0, 1, 2], dsmSrc: "d" },
-    ]);
-    expect(foldSource(chunk, chunk.instructions[3])).toBe("b");
+  const chunk = chunkOf([
+    { type: 1, mobility: 2, value: [[1, 2, 3]], dsmSrc: "points" },
+    { type: 1, mobility: 1, value: [1, 2], dsmSrc: "indices" },
+    { type: 8, args: [0, 1], dsmSrc: "inner" },
+    { type: 8, args: [2], dsmSrc: "use" },
+  ]);
+  const fold = foldOf(chunk, chunk.instructions[3]);
+
+  test("finds changeable constants through computed arguments", () => {
+    expect(fold.inputs.map((i) => i.dsmSrc)).toEqual(["points", "indices"]);
   });
 
-  test("looks through arguments that can't change", () => {
-    const chunk = chunkOf([
-      { type: 1, mobility: 1, value: [1, 2, 3], dsmSrc: "n" },
-      { type: 8, args: [0], dsmSrc: "c" },
-      { type: 23, args: [1], dsmSrc: "c" },
-    ]);
-    expect(foldSource(chunk, chunk.instructions[2])).toBe("n");
+  test("a value computed from inputs is the folded instruction's", () => {
+    expect(foldSource(fold, [[4, 5, 6]])).toBe("use");
+    expect(foldSource(fold, [1, 2, 3])).toBe("use");
   });
 
-  test("falls back to the first tagged argument, then the instruction", () => {
-    const chunk = chunkOf([
-      { type: 1, mobility: 0, value: 1, dsmSrc: "k" },
-      { type: 8, args: [0], dsmSrc: "x" },
-      { type: 8, args: [], dsmSrc: "y" },
-    ]);
-    expect(foldSource(chunk, chunk.instructions[1])).toBe("k");
-    expect(foldSource(chunk, chunk.instructions[2])).toBe("y");
+  test("a coordinate of a point list is the point list's", () => {
+    expect(foldSource(fold, [7])).toBe("points");
   });
 });
 
