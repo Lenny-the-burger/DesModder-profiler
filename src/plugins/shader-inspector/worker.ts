@@ -110,6 +110,7 @@ const REDUCTIONS = new Set([
 ]);
 
 const NATIVE_FUNCTION = 37;
+const BROADCAST_RESULT = 48;
 const LIST = 38;
 
 export function costCategory(
@@ -247,8 +248,7 @@ export function loopSymbols(
     const access = chunk.getInstruction(i);
     if (!access || !LIST_ACCESS.has(access.type)) continue;
     if (access.args?.[1] !== index) continue;
-    const list = chunk.getInstruction(access.args[0]);
-    const name = listName(list?.dsmSrc) ?? listPreview(list);
+    const name = listLabel(chunk, access.args[0]);
     if (name !== undefined) lists.add(name);
   }
   return [...lists];
@@ -292,6 +292,55 @@ export interface ShaderSourceInfo {
   loops: WorkerLoop[];
 }
 
+/** What a list in a chunk reads as: its variable, or its first few values. */
+export function listLabel(chunk: Chunk, index: number): string | undefined {
+  const list = chunk.getInstruction(index);
+  if (list?.type === BROADCAST_RESULT) {
+    // The result of a broadcast goes by what the broadcast runs over.
+    const end = list.args?.[0];
+    const start =
+      end === undefined ? undefined : chunk.getInstruction(end)?.args?.[0];
+    const broadcast =
+      start === undefined ? undefined : chunk.getInstruction(start);
+    if (start !== undefined && broadcast?.type === 23) {
+      const over = loopSymbols(broadcast, chunk, start);
+      if (over.length > 0) return over.join(", ");
+    }
+  }
+  return listName(list?.dsmSrc) ?? listPreview(list);
+}
+
+/** What a reduction costs per element, and which argument is its list. */
+const REDUCTION_COST: Partial<Record<string, { each: number; arg: number }>> = {
+  matrixTotal: { each: 16, arg: 0 },
+  elementsAt: { each: 5, arg: 1 },
+};
+
+/** The list a reduction goes through, as a loop of its elements. */
+export function reductionElements(
+  chunk: Chunk,
+  instr: Instruction | undefined,
+  cost: number
+): Elements | undefined {
+  if (instr?.type !== NATIVE_FUNCTION || !REDUCTIONS.has(instr.symbol ?? ""))
+    return undefined;
+  const { each, arg } = REDUCTION_COST[instr.symbol ?? ""] ?? {
+    each: 5,
+    arg: 0,
+  };
+  const terms = cost / each;
+  if (!(terms > 0) || !isFinite(terms)) return undefined;
+  const list = instr.args?.[arg];
+  const name = list === undefined ? undefined : listLabel(chunk, list);
+  return { terms, symbols: name === undefined ? [] : [name] };
+}
+
+/** The elements of a list an operation goes through. */
+export interface Elements {
+  terms: number;
+  symbols: string[];
+}
+
 export type CostEntry = [
   frame: number,
   category: CostCategory,
@@ -300,12 +349,15 @@ export type CostEntry = [
   loop: number,
   count: number,
   base: number,
+  /** For list reductions: the list's elements, each costing the same. */
+  elements?: Elements,
 ];
 
 interface CostTally {
   category: CostCategory;
   op: string;
   loop: number;
+  elements: Elements | undefined;
   count: number;
   base: number;
   cost: number;
@@ -499,12 +551,13 @@ export function createShaderTagger() {
       const category = costCategory(instr, cost);
       const op = opName(instr);
       const loop = top?.loop.id ?? -1;
-      const key = `${category}|${op}|${loop}`;
+      const elements = reductionElements(chunk, instr, cost);
+      const key = `${category}|${op}|${loop}|${elements ? `${elements.terms}:${elements.symbols.join(",")}` : ""}`;
       let t = tallies.get(key);
       if (!t)
         tallies.set(
           key,
-          (t = { category, op, loop, count: 0, base: 0, cost: 0 })
+          (t = { category, op, loop, elements, count: 0, base: 0, cost: 0 })
         );
       t.count++;
       t.base += cost;
@@ -603,7 +656,8 @@ export function createShaderTagger() {
             t.loop,
             t.count,
             t.base,
-          ]);
+            ...(t.elements ? [t.elements] : []),
+          ] as CostEntry);
       return {
         sources,
         frames,

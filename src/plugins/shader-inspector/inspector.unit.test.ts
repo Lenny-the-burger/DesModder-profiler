@@ -205,6 +205,43 @@ describe("createShaderTagger", () => {
     ]);
   });
 
+  test("counts a reduction's elements like a loop", () => {
+    const t = createShaderTagger();
+    const f = fr("f");
+    const chunk = chunkOf([
+      { type: 1, value: [1, 2, 3], dsmSrc: fr("l", 0, 1) },
+      {
+        type: 23,
+        context: {
+          type: "list-comprehension",
+          callData: { inputListSymbols: ["n"] },
+        },
+        endIndex: 3,
+      },
+      { type: 41, args: [0, 1] },
+      { type: 24, args: [1, 2] },
+      { type: 48, args: [3] },
+      { type: 37, symbol: "total", args: [4], dsmSrc: f },
+      { type: 37, symbol: "total", args: [0], dsmSrc: f },
+    ]);
+    const emitter = { chunk };
+    t.cost(emitter, () => t.leaf(chunk, 5, 500) + t.leaf(chunk, 6, 15));
+    const r = t.report(emitter)!;
+    expect(r.cost).toEqual([
+      [
+        0,
+        "reduction",
+        500,
+        "total()",
+        -1,
+        1,
+        500,
+        { terms: 100, symbols: ["n"] },
+      ],
+      [0, "reduction", 15, "total()", -1, 1, 15, { terms: 3, symbols: ["l"] }],
+    ]);
+  });
+
   test("groups the cost by operation and loop", () => {
     const t = createShaderTagger();
     const f = fr("f");

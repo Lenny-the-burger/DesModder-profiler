@@ -266,12 +266,22 @@ export function addShader(
     op = "?",
     loop = -1,
     count = 1,
-    base = cost,
+    fullBase = cost,
+    elements,
   ] of info?.cost ?? [])
     if (cost > 0)
       add(nodeOf(f), (s) => {
         s.cost[category] = (s.cost[category] ?? 0) + cost;
-        const tag = loopTags.get(loop);
+        const outer = loopTags.get(loop);
+        // A reduction's elements count like one more loop inside.
+        const tag: LoopTag | undefined = elements
+          ? {
+              key: `${outer?.key ?? ""}|${elements.terms}:${elements.symbols.join(",")}`,
+              runs: (outer?.runs ?? 1) * elements.terms,
+              loops: [...(outer?.loops ?? []), elements],
+            }
+          : outer;
+        const base = elements ? fullBase / elements.terms : fullBase;
         const key = `${category}|${op}|${tag?.key ?? ""}`;
         const o = (s.ops[key] ??= {
           category,
