@@ -441,6 +441,13 @@ export default class ShaderInspector extends PluginController {
     this.navigate(path);
   }
 
+  /** Show the part picked in the flame graph on the detail page. */
+  showPicked() {
+    if (this.selectedId === undefined || this.detailPath.length === 0) return;
+    this.detailOpen = true;
+    this.updateView();
+  }
+
   closeDetail() {
     this.detailOpen = false;
     this.updateView();

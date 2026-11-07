@@ -582,6 +582,34 @@
     min-width: 0;
   }
 
+  .dsm-si-legend-row:has(.dsm-si-legend-ops) {
+    flex-wrap: wrap;
+  }
+
+  /* The operations in a cost category, under its row. */
+  .dsm-si-legend-ops {
+    flex-basis: 100%;
+    padding: 0 0 4px 16px;
+    font-size: 11px;
+    color: #555;
+  }
+
+  .dsm-si-legend-op {
+    display: flex;
+    gap: 6px;
+  }
+
+  .dsm-si-legend-op-name {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .dsm-si-legend-op-value {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
   .dsm-si-part-row {
     display: grid;
     grid-template-columns: 10px 1fr auto;

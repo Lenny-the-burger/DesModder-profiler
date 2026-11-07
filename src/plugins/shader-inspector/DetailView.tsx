@@ -16,16 +16,18 @@ import {
   categoryColor,
   withAlpha,
 } from "./categories";
-import { fmt, latexToText } from "./text";
+import { fmt, latexToText, opText, repeatsText } from "./text";
 import {
   METRICS,
   Metric,
+  OpStat,
   SpanNode,
   codeOf,
   dominant,
   localStats,
   metricValue,
   nodeLatex,
+  opsIn,
 } from "./tree";
 import { Component, jsx } from "#DCGView";
 import { Button, For, If } from "#components";
@@ -249,32 +251,53 @@ export class DetailView extends Component<{
 
   stats() {
     return (
-      <div class="dsm-si-line">
-        {() => {
-          const chain = this.chain();
-          const node = this.node();
-          const m = this.metric();
-          const value = metricValue(node.total, m);
-          const root = metricValue(chain[0].total, m);
-          const parent = chain[chain.length - 2];
-          const own = metricValue(localStats(node), m);
-          const parts = [metricText(m, value)];
-          if (chain.length > 1)
-            parts.push(
-              format("shader-inspector-of-shader", {
-                percent: pct(value, root),
-              })
-            );
-          if (parent && parent !== chain[0])
-            parts.push(
-              format("shader-inspector-of-parent", {
-                percent: pct(value, metricValue(parent.total, m)),
-              })
-            );
-          if (node.children.length > 0)
-            parts.push(format("shader-inspector-itself", { value: fmt(own) }));
-          return parts.join(" · ");
-        }}
+      <div>
+        <div class="dsm-si-line">
+          {() => {
+            const chain = this.chain();
+            const node = this.node();
+            const m = this.metric();
+            const value = metricValue(node.total, m);
+            const root = metricValue(chain[0].total, m);
+            const parent = chain[chain.length - 2];
+            const own = metricValue(localStats(node), m);
+            const parts = [metricText(m, value)];
+            if (chain.length > 1)
+              parts.push(
+                format("shader-inspector-of-shader", {
+                  percent: pct(value, root),
+                })
+              );
+            if (parent && parent !== chain[0])
+              parts.push(
+                format("shader-inspector-of-parent", {
+                  percent: pct(value, metricValue(parent.total, m)),
+                })
+              );
+            if (node.children.length > 0)
+              parts.push(
+                format("shader-inspector-itself", { value: fmt(own) })
+              );
+            return parts.join(" · ");
+          }}
+        </div>
+        <If
+          predicate={() =>
+            this.metric() === "cost" &&
+            repeatsText(this.node().total) !== undefined
+          }
+        >
+          {() => (
+            <div class="dsm-si-line dsm-si-dim">
+              {() =>
+                format("shader-inspector-repeats", {
+                  total: fmt(metricValue(this.node().total, "cost")),
+                  parts: repeatsText(this.node().total) ?? "",
+                })
+              }
+            </div>
+          )}
+        </If>
       </div>
     );
   }
@@ -317,6 +340,27 @@ export class DetailView extends Component<{
                   <span class="dsm-si-legend-value">
                     {() => `${fmt(r().value)} (${pct(r().value, r().sum)})`}
                   </span>
+                  <If predicate={() => this.metric() === "cost"}>
+                    {() => (
+                      <div class="dsm-si-legend-ops">
+                        <For
+                          each={() => opsIn(this.node().total, r().key)}
+                          key={(o: OpStat) => `${o.op}|${o.loop?.key ?? ""}`}
+                        >
+                          {(o: () => OpStat) => (
+                            <div class="dsm-si-legend-op">
+                              <span class="dsm-si-legend-op-name">
+                                {() => opText(o())}
+                              </span>
+                              <span class="dsm-si-legend-op-value">
+                                {() => fmt(o().cost)}
+                              </span>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    )}
+                  </If>
                 </div>
               )}
             </For>

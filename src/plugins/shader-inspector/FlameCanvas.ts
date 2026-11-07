@@ -9,6 +9,8 @@ export interface FlameItem {
   key: string;
   name: string;
   value: number;
+  /** More about the value, for the hover line. */
+  note?: string;
   fill: string;
   text: string;
   children: FlameItem[];

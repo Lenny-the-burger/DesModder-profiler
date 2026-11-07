@@ -1,4 +1,5 @@
-/** Plain-text renderings of numbers and LaTeX. */
+/** Plain-text renderings of numbers, LaTeX and costs. */
+import { OpStat, Stats, loopText, repeatsOf } from "./tree";
 
 export const fmt = (n: number) =>
   Number.isFinite(n) ? Math.round(n).toLocaleString() : "∞";
@@ -32,5 +33,30 @@ export function latexToText(latex: string): string {
   s = s.replace(/[{}]/g, "");
   s = s.split(OPEN).join("{").split(CLOSE).join("}");
   s = s.replace(/\s+/g, " ").trim();
+  return s;
+}
+
+/**
+ * How the cost comes from what runs inside loops, like `6 × 100 (n) + 10`,
+ * or `undefined` if none of it is in a loop.
+ */
+export function repeatsText(stats: Stats): string | undefined {
+  const repeats = repeatsOf(stats);
+  if (!repeats.some((r) => r.loop && r.loop.runs !== 1)) return undefined;
+  return repeats
+    .map(({ loop, base }) => {
+      if (!loop) return fmt(base);
+      const vars =
+        loop.symbols.length > 0 ? ` (${loop.symbols.join(", ")})` : "";
+      return `${fmt(base)} × ${fmt(loop.runs)}${vars}`;
+    })
+    .join(" + ");
+}
+
+/** An operation's row in the cost breakdown: `tan() (×100: n) (×3)`. */
+export function opText(o: OpStat) {
+  let s = o.op;
+  if (o.loop && o.loop.runs !== 1) s += ` (${loopText(o.loop)})`;
+  if (o.count > 1) s += ` (×${fmt(o.count)})`;
   return s;
 }

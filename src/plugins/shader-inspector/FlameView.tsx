@@ -7,6 +7,7 @@ import type ShaderInspector from ".";
 import "./FlameView.less";
 import { FlameCanvas, FlameItem, FlameRect } from "./FlameCanvas";
 import { DetailView, metricText, nodeName } from "./DetailView";
+import { repeatsText } from "./text";
 import { lighten, textOn } from "./categories";
 import { METRICS, Metric, SpanNode, metricValue } from "./tree";
 import { ShaderReport } from "./report";
@@ -40,15 +41,23 @@ export class FlameGraphController {
     this.mountPoint = document.createElement("div");
     this.mountPoint.className = "dsm-si-flame-mount";
     document.body.appendChild(this.mountPoint);
+    // Desmos closes the menu on a pointerdown anywhere outside it, which is
+    // everywhere in the flame graph. This runs after the graph's own handlers.
+    document.addEventListener("pointerdown", this.onPointerDown);
     this.view = DCGView.mountToNode(FlameView, this.mountPoint, {
       fg: () => this,
     });
     document.addEventListener("keydown", this.onKeyDown, true);
   }
 
-  close() {
+  /**
+   * Close the flame graph. Closed by the user, the menu goes on showing the
+   * part picked in the graph.
+   */
+  close(byUser = false) {
     if (!this.mountPoint) return;
     document.removeEventListener("keydown", this.onKeyDown, true);
+    document.removeEventListener("pointerdown", this.onPointerDown);
     this.canvas?.destroy();
     this.canvas = undefined;
     unmountFromNode(this.mountPoint);
@@ -56,7 +65,13 @@ export class FlameGraphController {
     this.mountPoint = undefined;
     this.view = undefined;
     this.hovered = undefined;
+    if (byUser) this.si.showPicked();
   }
+
+  private readonly onPointerDown = (ev: PointerEvent) => {
+    if (ev.target instanceof Node && this.mountPoint?.contains(ev.target))
+      ev.stopPropagation();
+  };
 
   /** Called when the report, path or metric change. */
   refresh() {
@@ -115,6 +130,7 @@ export class FlameGraphController {
       key: node.key,
       name: nodeName(node),
       value: metricValue(node.total, metric),
+      note: metric === "cost" ? repeatsText(node.total) : undefined,
       fill,
       text: textOn(fill),
       children: node.children
@@ -141,7 +157,7 @@ export class FlameGraphController {
     ev.stopPropagation();
     const path = this.si.detailPath;
     if (path.length > 0) this.si.navigate(path.slice(0, -1));
-    else this.close();
+    else this.close(true);
   };
 }
 
@@ -154,7 +170,7 @@ class FlameView extends Component<{ fg: () => FlameGraphController }> {
       <div
         class="dsm-si-flame-backdrop"
         onTap={(e: Event) => {
-          if (e.target === e.currentTarget) this.fg().close();
+          if (e.target === e.currentTarget) this.fg().close(true);
         }}
       >
         <div
@@ -181,7 +197,7 @@ class FlameView extends Component<{ fg: () => FlameGraphController }> {
               role="button"
               tabindex="0"
               aria-label={format("shader-inspector-flame-close")}
-              onTap={() => this.fg().close()}
+              onTap={() => this.fg().close(true)}
             />
           </div>
           <div class="dsm-si-flame-body">
@@ -206,7 +222,8 @@ class FlameView extends Component<{ fg: () => FlameGraphController }> {
                     root > 0
                       ? ` (${Math.round((100 * h.item.value) / root)}%)`
                       : "";
-                  return `${h.item.name}: ${metricText(this.si().metric, h.item.value)}${share}`;
+                  const note = h.item.note ? ` = ${h.item.note}` : "";
+                  return `${h.item.name}: ${metricText(this.si().metric, h.item.value)}${note}${share}`;
                 }}
               </div>
             </div>

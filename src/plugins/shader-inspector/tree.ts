@@ -21,8 +21,32 @@ export const METRICS: Metric[] = ["cost", "uniforms", "glsl", "loops"];
 export type SlotKind = "single" | "list" | "baked";
 export const SLOT_KINDS: SlotKind[] = ["single", "list", "baked"];
 
+/** The loops an operation runs inside, innermost last. */
+export interface LoopTag {
+  /** Unique within the report. */
+  key: string;
+  /** Times the body runs per pixel. */
+  runs: number;
+  /** Variables the loops run over. */
+  symbols: string[];
+}
+
+/** One operation's share of the cost: its call sites in one loop, or outside any. */
+export interface OpStat {
+  category: CostCategory;
+  op: string;
+  loop: LoopTag | undefined;
+  /** Call sites. */
+  count: number;
+  /** Cost of one run of all of them. */
+  base: number;
+  cost: number;
+}
+
 export interface Stats {
   cost: Partial<Record<CostCategory, number>>;
+  /** The cost by operation and loop, by `category|op|loop`. */
+  ops: Record<string, OpStat>;
   slots: Partial<Record<SlotKind, number>>;
   /** Characters of GLSL. */
   chars: number;
@@ -71,6 +95,7 @@ const PART_LINES = 1e7;
 
 const emptyStats = (): Stats => ({
   cost: {},
+  ops: {},
   slots: {},
   chars: 0,
   loopSteps: 0,
@@ -79,6 +104,12 @@ const emptyStats = (): Stats => ({
 function addStats(into: Stats, from: Stats) {
   for (const [k, v] of Object.entries(from.cost) as [CostCategory, number][])
     into.cost[k] = (into.cost[k] ?? 0) + v;
+  for (const [k, o] of Object.entries(from.ops)) {
+    const into_ = (into.ops[k] ??= { ...o, count: 0, base: 0, cost: 0 });
+    into_.count += o.count;
+    into_.base += o.base;
+    into_.cost += o.cost;
+  }
   for (const [k, v] of Object.entries(from.slots) as [SlotKind, number][])
     into.slots[k] = (into.slots[k] ?? 0) + v;
   into.chars += from.chars;
@@ -211,10 +242,44 @@ export function addShader(
   const add = (n: SpanNode, f: (s: Stats) => void) => f(n.self);
 
   // Cost.
-  for (const [f, category, cost] of info?.cost ?? [])
+  const loopTags = new Map<number, LoopTag>();
+  const tagLoops = (ls: WorkerLoop[], outer: LoopTag | undefined) => {
+    for (const l of ls) {
+      const tag: LoopTag = {
+        key: `${partNode.part ?? ""}:${l.id}`,
+        runs: (outer?.runs ?? 1) * l.terms,
+        symbols: [...(outer?.symbols ?? []), ...(l.symbols ?? [])],
+      };
+      loopTags.set(l.id, tag);
+      tagLoops(l.children, tag);
+    }
+  };
+  tagLoops(info?.loops ?? [], undefined);
+  for (const [
+    f,
+    category,
+    cost,
+    op = "?",
+    loop = -1,
+    count = 1,
+    base = cost,
+  ] of info?.cost ?? [])
     if (cost > 0)
       add(nodeOf(f), (s) => {
         s.cost[category] = (s.cost[category] ?? 0) + cost;
+        const tag = loopTags.get(loop);
+        const key = `${category}|${op}|${tag?.key ?? ""}`;
+        const o = (s.ops[key] ??= {
+          category,
+          op,
+          loop: tag,
+          count: 0,
+          base: 0,
+          cost: 0,
+        });
+        o.count += count;
+        o.base += base;
+        o.cost += cost;
       });
 
   // Uniforms.
@@ -317,6 +382,43 @@ export function resolvePath(root: SpanNode, keys: string[]): SpanNode[] {
     node = next;
   }
   return chain;
+}
+
+/** A loop as the inspector writes it: `×100: n`. */
+export function loopText(loop: LoopTag) {
+  const runs = `×${Math.round(loop.runs).toLocaleString()}`;
+  return loop.symbols.length > 0 ? `${runs}: ${loop.symbols.join(", ")}` : runs;
+}
+
+/** The operations of one cost category, costliest first. */
+export function opsIn(stats: Stats, category: string): OpStat[] {
+  return Object.values(stats.ops)
+    .filter((o) => o.category === category && o.cost > 0)
+    .sort((a, b) => b.cost - a.cost);
+}
+
+export interface Repeat {
+  loop: LoopTag | undefined;
+  /** Cost of one run. */
+  base: number;
+  cost: number;
+}
+
+/**
+ * The cost split by the loop it runs in: what one run costs, and how many
+ * times it runs. Costliest first.
+ */
+export function repeatsOf(stats: Stats): Repeat[] {
+  const byLoop = new Map<string, Repeat>();
+  for (const o of Object.values(stats.ops)) {
+    if (!(o.cost > 0)) continue;
+    const k = o.loop?.key ?? "";
+    let r = byLoop.get(k);
+    if (!r) byLoop.set(k, (r = { loop: o.loop, base: 0, cost: 0 }));
+    r.base += o.base;
+    r.cost += o.cost;
+  }
+  return [...byLoop.values()].sort((a, b) => b.cost - a.cost);
 }
 
 /** The biggest entry of a breakdown, if any is above 0. */

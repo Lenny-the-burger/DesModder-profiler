@@ -4,8 +4,10 @@ import {
   localStats,
   metricValue,
   nodeLatex,
+  opsIn,
   resolvePath,
 } from "./tree";
+import { opText, repeatsText } from "./text";
 import {
   createShaderTagger,
   costCategory,
@@ -130,8 +132,8 @@ describe("createShaderTagger", () => {
     expect(r.lists).toEqual([0]);
     expect(r.instructions).toEqual([1, 0]);
     expect(r.cost).toEqual([
-      [1, "free", 0],
-      [0, "cheap", 1],
+      [1, "free", 0, "op 1", -1, 1, 0],
+      [0, "cheap", 1, "+", -1, 1, 1],
     ]);
   });
 
@@ -141,27 +143,78 @@ describe("createShaderTagger", () => {
     const chunk = chunkOf([{ type: 8, dsmSrc: f }]);
     const emitter = { chunk };
     t.cost(emitter, () =>
-      t.loop(chunk, { type: 19, dsmSrc: f }, 10, () =>
-        t.loop(
-          chunk,
-          { type: 19, callData: { type: "product" }, dsmSrc: f },
-          5,
-          () => t.leaf(chunk, 0, 1)
-        )
+      t.loop(
+        chunk,
+        { type: 19, callData: { indexSymbol: "i" }, dsmSrc: f },
+        10,
+        () =>
+          t.loop(
+            chunk,
+            {
+              type: 19,
+              callData: { type: "product", indexSymbol: "_trapIdx" },
+              dsmSrc: f,
+            },
+            5,
+            () => t.leaf(chunk, 0, 1)
+          )
       )
     );
     const r = t.report(emitter)!;
-    expect(r.cost).toEqual([[0, "cheap", 50]]);
+    expect(r.cost).toEqual([[0, "cheap", 50, "+", 1, 1, 1]]);
     expect(r.loops).toEqual([
       {
+        id: 0,
         kind: "sum",
         terms: 10,
+        symbols: ["i"],
         source: 0,
         bodyCost: 1,
         children: [
-          { kind: "product", terms: 5, source: 0, bodyCost: 1, children: [] },
+          {
+            id: 1,
+            kind: "product",
+            terms: 5,
+            symbols: [],
+            source: 0,
+            bodyCost: 1,
+            children: [],
+          },
         ],
       },
+    ]);
+  });
+
+  test("groups the cost by operation and loop", () => {
+    const t = createShaderTagger();
+    const f = fr("f");
+    const chunk = chunkOf([
+      { type: 37, symbol: "tan", dsmSrc: f },
+      { type: 37, symbol: "tan", dsmSrc: f },
+      { type: 8, dsmSrc: f },
+    ]);
+    const emitter = { chunk };
+    const comprehension = {
+      type: 23,
+      context: {
+        type: "list-comprehension",
+        callData: { inputListSymbols: ["n"] },
+      },
+      dsmSrc: f,
+    };
+    t.cost(
+      emitter,
+      () =>
+        t.loop(chunk, comprehension, 100, () =>
+          [0, 1, 2].reduce((c, i) => c + t.leaf(chunk, i, i < 2 ? 5 : 1), 0)
+        ) + t.leaf(chunk, 0, 5)
+    );
+    const r = t.report(emitter)!;
+    expect(r.loops[0].symbols).toEqual(["n"]);
+    expect(r.cost).toEqual([
+      [0, "costly", 1000, "tan()", 0, 2, 10],
+      [0, "cheap", 100, "+", 0, 1, 1],
+      [0, "costly", 5, "tan()", -1, 1, 5],
     ]);
   });
 });
@@ -249,8 +302,8 @@ describe("report", () => {
         uniforms: [2],
         instructions: [-1, 2, 3],
         cost: [
-          [0, "cheap", 1],
-          [3, "costly", 5],
+          [0, "cheap", 1, "+", -1, 1, 1],
+          [3, "costly", 5, "sin()", -1, 1, 5],
         ],
       }),
     };
@@ -285,6 +338,48 @@ describe("report", () => {
     ).toBe(5);
   });
 
+  test("splits the cost by loop and operation", () => {
+    const shader = {
+      source: "return 1.0;",
+      shaderUniforms: [],
+      costEstimate: 1510,
+      dsmInfo: info({
+        sources: ["f"],
+        frames: [[0, 0, 1, -1]],
+        cost: [
+          [0, "costly", 1500, "tan()", 0, 3, 15],
+          [0, "costly", 10, "tan()", -1, 2, 10],
+        ],
+        loops: [
+          {
+            id: 0,
+            kind: "list",
+            terms: 100,
+            symbols: ["n"],
+            source: 0,
+            bodyCost: 15,
+            children: [],
+          },
+        ],
+      }),
+    };
+    const report = shaderReport({
+      id: "3",
+      colorId: undefined,
+      surfaces: 1,
+      programs: 1,
+      shaders: { color: shader },
+      budget: 10,
+      resolve: () => "3",
+    });
+    const stats = report.tree.total;
+    expect(opsIn(stats, "costly").map(opText)).toEqual([
+      "tan() (×100: n) (×3)",
+      "tan() (×2)",
+    ]);
+    expect(repeatsText(stats)).toBe("15 × 100 (n) + 10");
+  });
+
   test("a part holding only one other part of its expression merges with it", () => {
     const c = "c=a+\\sin(L)";
     const shader = {
@@ -298,7 +393,7 @@ describe("report", () => {
           [0, 2, 11, 0], // a+\sin(L)
           [0, 4, 11, 1], // \sin(L)
         ],
-        cost: [[2, "costly", 5]],
+        cost: [[2, "costly", 5, "sin()", -1, 1, 5]],
       }),
     };
     const report = shaderReport({

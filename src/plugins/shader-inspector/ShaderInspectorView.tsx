@@ -37,7 +37,7 @@ function shortLabel(si: ShaderInspector, origin: Origin) {
 
 /** Desmos's cost per instruction, as rows of the cost explanation. */
 type CostRow = readonly [string, string];
-const COST_ROWS: readonly CostRow[] = [
+const COST_ROWS: CostRow[] = [
   ["0", "free"],
   ["1", "cheap"],
   ["5", "costly"],

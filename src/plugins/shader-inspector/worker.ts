@@ -29,10 +29,13 @@ type Source = Frame;
 interface Instruction {
   type: number;
   args?: number[];
-  callData?: { type?: string };
   mobility?: number;
   value?: unknown;
   symbol?: string;
+  /** Loops: the index variable. */
+  callData?: { type?: string; indexSymbol?: string };
+  /** Broadcasts: what they broadcast over. */
+  context?: { type?: string; callData?: { inputListSymbols?: string[] } };
   dsmSrc?: Source;
 }
 
@@ -121,9 +124,59 @@ export function costCategory(
   return "heavy";
 }
 
+/** Names of operations, by opcode. Native functions go by their name. */
+const OP_NAMES: Partial<Record<number, string>> = {
+  8: "+",
+  9: "-",
+  10: "*",
+  11: "/",
+  12: "^",
+  13: "^",
+  14: "-x",
+  56: "x^2",
+  25: "=",
+  26: "<",
+  27: ">",
+  28: "<=",
+  29: ">=",
+  31: "or",
+  32: "and",
+  33: "piecewise",
+  38: "list",
+  39: "L[i]",
+  40: "L[i]",
+  41: "L[i]",
+  15: "point",
+  16: "point.x",
+};
+
+/** What an instruction does, as the inspector lists it. */
+export function opName(instr: Instruction | undefined): string {
+  if (!instr) return "?";
+  if (instr.type === NATIVE_FUNCTION) return `${instr.symbol ?? "?"}()`;
+  return OP_NAMES[instr.type] ?? `op ${instr.type}`;
+}
+
+/** The variables a loop runs over, as they read in the expression. */
+export function loopSymbols(instr: Instruction): string[] {
+  const raw =
+    instr.type === 19
+      ? [instr.callData?.indexSymbol]
+      : instr.context?.type === "list-comprehension"
+        ? (instr.context.callData?.inputListSymbols ?? [])
+        : [];
+  return raw
+    .filter((s): s is string => typeof s === "string" && !s.startsWith("_"))
+    .map((s) => s.replace(/_/g, ""));
+}
+
 export interface WorkerLoop {
+  /** Unique within its shader. */
+  id: number;
   kind: LoopKind;
   terms: number;
+  /** Variables it runs over; none for broadcasting a list. */
+  symbols: string[];
   /** Index into `frames`, or -1. */
   source: number;
   /** Cost of one run of the body. */
@@ -146,9 +199,32 @@ export interface ShaderSourceInfo {
   lists: number[];
   /** Frame of each instruction, by instruction index. */
   instructions: number[];
-  /** Cost estimate contributed by each frame, as [frame, category, cost]. */
-  cost: [number, CostCategory, number][];
+  /**
+   * Cost estimate contributed by each frame, split by operation and the loop
+   * it runs in, as [frame, category, cost, operation, loop id (-1 for none),
+   * instructions, cost of one run].
+   */
+  cost: CostEntry[];
   loops: WorkerLoop[];
+}
+
+export type CostEntry = [
+  frame: number,
+  category: CostCategory,
+  cost: number,
+  op: string,
+  loop: number,
+  count: number,
+  base: number,
+];
+
+interface CostTally {
+  category: CostCategory;
+  op: string;
+  loop: number;
+  count: number;
+  base: number;
+  cost: number;
 }
 
 interface EmitterRecord {
@@ -158,8 +234,9 @@ interface EmitterRecord {
 
 interface CostCollection {
   chunk: Chunk;
-  bySource: Map<Source | undefined, Map<CostCategory, number>>;
+  bySource: Map<Source | undefined, Map<string, CostTally>>;
   roots: WorkerLoop[];
+  loops: number;
   stack: { loop: WorkerLoop; multiplier: number }[];
 }
 
@@ -316,6 +393,7 @@ export function createShaderTagger() {
         chunk: emitter.chunk,
         bySource: new Map(),
         roots: [],
+        loops: 0,
         stack: [],
       };
       try {
@@ -332,13 +410,21 @@ export function createShaderTagger() {
       const top = c.stack[c.stack.length - 1];
       const instr = chunk.getInstruction(index);
       const src = instr?.dsmSrc;
-      let byCategory = c.bySource.get(src);
-      if (!byCategory) c.bySource.set(src, (byCategory = new Map()));
+      let tallies = c.bySource.get(src);
+      if (!tallies) c.bySource.set(src, (tallies = new Map()));
       const category = costCategory(instr, cost);
-      byCategory.set(
-        category,
-        (byCategory.get(category) ?? 0) + cost * (top?.multiplier ?? 1)
-      );
+      const op = opName(instr);
+      const loop = top?.loop.id ?? -1;
+      const key = `${category}|${op}|${loop}`;
+      let t = tallies.get(key);
+      if (!t)
+        tallies.set(
+          key,
+          (t = { category, op, loop, count: 0, base: 0, cost: 0 })
+        );
+      t.count++;
+      t.base += cost;
+      t.cost += cost * (top?.multiplier ?? 1);
       return cost;
     },
     /** The body of a loop or broadcast, run `terms` times. */
@@ -346,6 +432,8 @@ export function createShaderTagger() {
       const c = costs;
       if (!c || c.chunk !== chunk) return body();
       const loop: WorkerLoop = {
+        id: c.loops++,
+        symbols: loopSymbols(instr),
         kind:
           instr.type === 19
             ? instr.callData?.type === "product"
@@ -414,9 +502,17 @@ export function createShaderTagger() {
           children: loops(l.children),
         }));
       const costs: ShaderSourceInfo["cost"] = [];
-      for (const [s, byCategory] of cost?.bySource ?? [])
-        for (const [category, c] of byCategory)
-          costs.push([id(s), category, c]);
+      for (const [s, tallies] of cost?.bySource ?? [])
+        for (const t of tallies.values())
+          costs.push([
+            id(s),
+            t.category,
+            t.cost,
+            t.op,
+            t.loop,
+            t.count,
+            t.base,
+          ]);
       return {
         sources,
         frames,

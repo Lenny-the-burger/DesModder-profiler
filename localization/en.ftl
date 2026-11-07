@@ -499,6 +499,7 @@ shader-inspector-unit-loops = { $value } loop steps per pixel
 shader-inspector-of-shader = { $percent } of the shader
 shader-inspector-of-parent = { $percent } of the part it's in
 shader-inspector-itself = { $value } by itself
+shader-inspector-repeats = Cost { $total } = { $parts }
 shader-inspector-cat-cost-never = Can't be in a shader
 shader-inspector-cat-cost-reduction = List reductions (5 per element)
 shader-inspector-cat-cost-list = Lists written out (1 per element)
