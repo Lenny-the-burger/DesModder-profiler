@@ -2,19 +2,29 @@
  * Worker side of the shader inspector, hooked in by
  * `shader-inspector.replacements`.
  *
- * Every compiler instruction is tagged with the expression it came from: the
- * LaTeX of the parse node being compiled when it was created. Inlined
- * definitions compile their own parse nodes, so their instructions get their
- * own LaTeX. Instructions made outside any parse node (later transforms)
- * inherit the tag of their first tagged argument.
+ * Every compiler instruction is tagged with the part of an expression it came
+ * from: the parse node being compiled when it was created, as a frame holding
+ * the node's place in its statement's LaTeX and the frame it was compiled
+ * inside. Parse nodes compile their children, so frames nest like the parse
+ * tree, and a definition inlined into another expression nests under the
+ * place that uses it. Instructions made outside any parse node (later
+ * transforms) inherit the tag of their first tagged argument.
  *
- * When a 3D shader is emitted, the tags of the values it puts in uniforms and
- * lists, of each instruction, and of the cost estimate are attached to the
- * shader as `dsmInfo`, which reaches the main thread with the shader.
+ * When a 3D shader is emitted, the frames of the values it puts in uniforms
+ * and lists, of each instruction, and of the cost estimate are attached to
+ * the shader as `dsmInfo`, which reaches the main thread with the shader.
  */
 
-/** Statement LaTeX, as a parse node's input span holds it. */
-type Source = string;
+/** A parse node: where it is in its statement, and what it was compiled in. */
+export interface Frame {
+  /** Statement LaTeX, as a parse node's input span holds it. */
+  input: string;
+  start: number;
+  end: number;
+  parent: Frame | undefined;
+}
+
+type Source = Frame;
 
 interface Instruction {
   type: number;
@@ -22,6 +32,7 @@ interface Instruction {
   callData?: { type?: string };
   mobility?: number;
   value?: unknown;
+  symbol?: string;
   dsmSrc?: Source;
 }
 
@@ -36,15 +47,84 @@ interface Emitter {
 }
 
 interface ParseNode {
-  getInputSpan?: () => { input?: unknown } | undefined;
+  getInputSpan?: () =>
+    | { input?: unknown; start?: unknown; end?: unknown }
+    | undefined;
 }
 
 export type LoopKind = "sum" | "product" | "list";
 
+/**
+ * What an instruction's cost estimate is for, following Desmos's table of
+ * costs: free (0), cheap (1), costly (5), heavy (more than 5, matrices),
+ * reduction (5 per element of a list), list (1 per element written out), and
+ * never (can't be in a shader).
+ */
+export type CostCategory =
+  | "free"
+  | "cheap"
+  | "costly"
+  | "heavy"
+  | "reduction"
+  | "list"
+  | "never";
+
+export const COST_CATEGORIES: CostCategory[] = [
+  "never",
+  "reduction",
+  "list",
+  "heavy",
+  "costly",
+  "cheap",
+  "free",
+];
+
+/** Native functions whose cost scales with the length of a list. */
+const REDUCTIONS = new Set([
+  "mean",
+  "total",
+  "var",
+  "varp",
+  "stdev",
+  "stdevp",
+  "mad",
+  "listMin",
+  "listMax",
+  "median",
+  "argmin",
+  "argmax",
+  "gcd",
+  "lcm",
+  "sortPerm",
+  "complexSortPerm",
+  "elementsAt",
+  "cov",
+  "covp",
+  "corr",
+  "matrixTotal",
+]);
+
+const NATIVE_FUNCTION = 37;
+const LIST = 38;
+
+export function costCategory(
+  instr: Instruction | undefined,
+  cost: number
+): CostCategory {
+  if (!isFinite(cost)) return "never";
+  if (instr?.type === LIST) return "list";
+  if (instr?.type === NATIVE_FUNCTION && REDUCTIONS.has(instr.symbol ?? ""))
+    return "reduction";
+  if (cost <= 0) return "free";
+  if (cost <= 1) return "cheap";
+  if (cost <= 5) return "costly";
+  return "heavy";
+}
+
 export interface WorkerLoop {
   kind: LoopKind;
   terms: number;
-  /** Index into `sources`, or -1. */
+  /** Index into `frames`, or -1. */
   source: number;
   /** Cost of one run of the body. */
   bodyCost: number;
@@ -53,16 +133,21 @@ export interface WorkerLoop {
 
 /** Attached to each 3D shader as `dsmInfo`. */
 export interface ShaderSourceInfo {
-  /** LaTeX of each expression that contributed. */
+  /** LaTeX of each statement that contributed. */
   sources: string[];
-  /** Source of each uniform, by uniform index (-1 if unknown). */
+  /**
+   * Each part of an expression that contributed, as
+   * [source, start, end, parent frame (-1 for none)]. Parents come first.
+   */
+  frames: [number, number, number, number][];
+  /** Frame of each uniform, by uniform index (-1 if unknown). */
   uniforms: number[];
-  /** Source of each list constant `_Cn`, by n. */
+  /** Frame of each list constant `_Cn`, by n. */
   lists: number[];
-  /** Source of each instruction, by instruction index. */
+  /** Frame of each instruction, by instruction index. */
   instructions: number[];
-  /** Cost estimate contributed by each source, as [source, cost]. */
-  cost: [number, number][];
+  /** Cost estimate contributed by each frame, as [frame, category, cost]. */
+  cost: [number, CostCategory, number][];
   loops: WorkerLoop[];
 }
 
@@ -73,9 +158,9 @@ interface EmitterRecord {
 
 interface CostCollection {
   chunk: Chunk;
-  bySource: Map<Source | undefined, number>;
+  bySource: Map<Source | undefined, Map<CostCategory, number>>;
   roots: WorkerLoop[];
-  stack: { loop: WorkerLoop; multiplier: number; source?: Source }[];
+  stack: { loop: WorkerLoop; multiplier: number }[];
 }
 
 /** Instructions to look through for where a folded value came from. */
@@ -134,7 +219,7 @@ export function foldSource(fold: Fold, value: unknown): Source | undefined {
 }
 
 export function createShaderTagger() {
-  let current: Source | undefined;
+  let current: Frame | undefined;
   /** Source of the instruction being copied, if any. */
   let copySource: Source | undefined;
   /** The fold about to push a constant, if any. */
@@ -150,19 +235,23 @@ export function createShaderTagger() {
     return r;
   }
 
-  function sourceOf(node: ParseNode): Source | undefined {
-    const input = node?.getInputSpan?.()?.input;
-    return typeof input === "string" && input !== "" ? input : undefined;
+  function frameOf(node: ParseNode): Frame | undefined {
+    const span = node?.getInputSpan?.();
+    const input = span?.input;
+    if (typeof input !== "string" || input === "") return undefined;
+    const start = typeof span?.start === "number" ? span.start : 0;
+    const end = typeof span?.end === "number" ? span.end : input.length;
+    return { input, start, end, parent: current };
   }
 
   return {
     /** Compiling a parse node starts. Returns what to pass to `exit`. */
     enter(node: ParseNode) {
       const prev = current;
-      current = sourceOf(node) ?? current;
+      current = frameOf(node) ?? current;
       return prev;
     },
-    exit(prev: Source | undefined) {
+    exit(prev: Frame | undefined) {
       current = prev;
     },
 
@@ -239,10 +328,14 @@ export function createShaderTagger() {
       const c = costs;
       if (!c || c.chunk !== chunk) return cost;
       const top = c.stack[c.stack.length - 1];
-      const src = chunk.getInstruction(index)?.dsmSrc;
-      c.bySource.set(
-        src,
-        (c.bySource.get(src) ?? 0) + cost * (top?.multiplier ?? 1)
+      const instr = chunk.getInstruction(index);
+      const src = instr?.dsmSrc;
+      let byCategory = c.bySource.get(src);
+      if (!byCategory) c.bySource.set(src, (byCategory = new Map()));
+      const category = costCategory(instr, cost);
+      byCategory.set(
+        category,
+        (byCategory.get(category) ?? 0) + cost * (top?.multiplier ?? 1)
       );
       return cost;
     },
@@ -279,11 +372,19 @@ export function createShaderTagger() {
       const { chunk } = emitter;
       if (!chunk) return undefined;
       const sources: string[] = [];
-      const ids = new Map<Source, number>();
-      const id = (s: Source | undefined) => {
-        if (s === undefined) return -1;
-        let n = ids.get(s);
-        if (n === undefined) ids.set(s, (n = sources.push(s) - 1));
+      const sourceIds = new Map<string, number>();
+      const frames: ShaderSourceInfo["frames"] = [];
+      const frameIds = new Map<Frame, number>();
+      const id = (f: Frame | undefined): number => {
+        if (f === undefined) return -1;
+        const known = frameIds.get(f);
+        if (known !== undefined) return known;
+        const parent = id(f.parent);
+        let s = sourceIds.get(f.input);
+        if (s === undefined)
+          sourceIds.set(f.input, (s = sources.push(f.input) - 1));
+        const n = frames.push([s, f.start, f.end, parent]) - 1;
+        frameIds.set(f, n);
         return n;
       };
       const r = record(emitter);
@@ -294,14 +395,17 @@ export function createShaderTagger() {
           source: id(loopSources.get(l)),
           children: loops(l.children),
         }));
+      const costs: ShaderSourceInfo["cost"] = [];
+      for (const [s, byCategory] of cost?.bySource ?? [])
+        for (const [category, c] of byCategory)
+          costs.push([id(s), category, c]);
       return {
         sources,
+        frames,
         uniforms: r.uniforms.map(id),
         lists: r.lists.map(id),
         instructions: chunk.instructions.map((i) => id(i?.dsmSrc)),
-        cost: cost
-          ? [...cost.bySource].map(([s, c]) => [id(s), c] as [number, number])
-          : [],
+        cost: costs,
         loops: cost ? loops(cost.roots) : [],
       };
     },

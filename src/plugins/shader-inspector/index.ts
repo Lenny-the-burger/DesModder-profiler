@@ -18,6 +18,8 @@ import {
   ShaderReport,
   shaderReport,
 } from "./report";
+import { FlameGraphController } from "./FlameView";
+import { Metric, SpanNode, resolvePath } from "./tree";
 import { ItemModel } from "#globals";
 
 /** Errors Desmos gives when a shader would go over one of its limits. */
@@ -66,7 +68,10 @@ interface History {
 }
 
 interface GraphSketch3d {
-  branches?: { color?: string; restrictionShader?: DesmosShader }[];
+  branches?: {
+    color?: string;
+    restrictionShader?: DesmosShader;
+  }[];
 }
 
 interface Grapher3d {
@@ -127,6 +132,18 @@ export default class ShaderInspector extends PluginController {
   showGlsl = false;
   /** The part whose cost explanation is open, if any. */
   costHelp: ShaderPart | undefined = undefined;
+  /** The legend row opened to show more, as `section:origin`. */
+  expanded: string | undefined;
+  /**
+   * The part of the shader shown in detail, as keys from the root of the
+   * report's tree. Shared by the menu's detail page and the flame graph.
+   */
+  detailPath: string[] = [];
+  /** Whether the menu shows the detail page. */
+  detailOpen = false;
+  /** What the detail view and flame graph measure. */
+  metric: Metric = "cost";
+  readonly flame = new FlameGraphController(this);
   private cachedReport: ShaderReport | undefined;
 
   afterEnable() {
@@ -145,6 +162,7 @@ export default class ShaderInspector extends PluginController {
         this.lastShaders.clear();
         this.lastPrograms.clear();
         this.resetCounts();
+        this.select(undefined);
         this.scheduleSample();
       }
     });
@@ -153,6 +171,7 @@ export default class ShaderInspector extends PluginController {
 
   afterDisable() {
     clearTimeout(this.sampleTimeout);
+    this.flame.close();
     this.selectedId = undefined;
     this.cc.updateViews();
     this.cc.dispatcher.unregister(this.dispatchListenerID);
@@ -255,7 +274,11 @@ export default class ShaderInspector extends PluginController {
       if (!h)
         this.history.set(
           id,
-          (h = { recompiles: 0, reasons: {}, lastReason: undefined })
+          (h = {
+            recompiles: 0,
+            reasons: {},
+            lastReason: undefined,
+          })
         );
       for (const key of newPrograms.get(id) ?? []) {
         const reason = reasons.get(`${id}\u0000${key}`)!;
@@ -285,7 +308,11 @@ export default class ShaderInspector extends PluginController {
     this.rows = rows.sort(compareRows);
     this.cachedReport = undefined;
     this.errors = this.limitErrors();
+    // The surface being inspected is gone: back to the list.
+    if (this.selectedId !== undefined && !this.selectedRow())
+      this.select(undefined);
     this.updateView();
+    this.flame.refresh();
   }
 
   private limitErrors(): LimitErrorRow[] {
@@ -305,12 +332,18 @@ export default class ShaderInspector extends PluginController {
     return out;
   }
 
-  private updateView() {
+  updateView() {
     if (this.dsm.pillboxMenus?.pillboxMenuOpen === "dsm-shader-inspector-menu")
       this.dsm.pillboxMenus.updateMenuView();
   }
 
   select(id: string | undefined) {
+    if (id !== this.selectedId) {
+      this.detailPath = [];
+      this.detailOpen = false;
+      this.expanded = undefined;
+    }
+    if (id === undefined) this.flame.close();
     this.selectedId = id;
     this.cachedReport = undefined;
     // The expression list shows what each expression adds to the shader.
@@ -342,6 +375,55 @@ export default class ShaderInspector extends PluginController {
     return this.cachedReport;
   }
 
+  /** Root first, the node shown in detail last. */
+  detailChain(): SpanNode[] {
+    const report = this.report();
+    return report ? resolvePath(report.tree, this.detailPath) : [];
+  }
+
+  /** Show a part of the shader in detail, by its keys from the root. */
+  navigate(path: string[]) {
+    this.detailPath = path;
+    this.updateView();
+    this.flame.refresh();
+  }
+
+  openDetail(path: string[]) {
+    this.detailOpen = true;
+    this.navigate(path);
+  }
+
+  closeDetail() {
+    this.detailOpen = false;
+    this.updateView();
+  }
+
+  setMetric(metric: Metric) {
+    this.metric = metric;
+    // The hovered bar was measured in the old metric.
+    this.flame.hovered = undefined;
+    this.updateView();
+    this.flame.refresh();
+  }
+
+  toggleExpanded(key: string) {
+    this.expanded = this.expanded === key ? undefined : key;
+    this.updateView();
+  }
+
+  /** Keys to the first, outermost part of the tree from `origin`. */
+  pathOf(origin: Origin): string[] {
+    const report = this.report();
+    if (!report) return [];
+    const queue: [SpanNode, string[]][] = [[report.tree, []]];
+    while (queue.length > 0) {
+      const [node, path] = queue.shift()!;
+      if (node.kind === "frame" && node.origin === origin) return path;
+      for (const c of node.children) queue.push([c, [...path, c.key]]);
+    }
+    return [];
+  }
+
   /** Map the LaTeX the worker recorded back to expression ids. */
   private resolver() {
     const byLatex = new Map<string, string>();
@@ -360,8 +442,12 @@ export default class ShaderInspector extends PluginController {
 
   originColor(origin: Origin) {
     if (origin === undefined) return UNTRACED_COLOR;
-    const i = this.report()?.origins.indexOf(origin) ?? -1;
-    return i < 0 ? UNTRACED_COLOR : ORIGIN_COLORS[i % ORIGIN_COLORS.length];
+    const origins = this.report()?.origins ?? [];
+    let i = origins.indexOf(origin);
+    // Expressions only seen deep in the tree (a slider inside a definition)
+    // still get a color of their own.
+    if (i < 0) i = origins.length + hash(origin);
+    return ORIGIN_COLORS[i % ORIGIN_COLORS.length];
   }
 
   /** Shown under each expression that is part of the inspected shader. */
@@ -413,6 +499,12 @@ export default class ShaderInspector extends PluginController {
     this.cc.dispatch({ type: "set-selected-id", id });
     this.cc.scrollSelectedItemIntoView();
   }
+}
+
+function hash(s: string) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
 }
 
 /** Problems first: recompiling, then over budget, then closest to it. */

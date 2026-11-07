@@ -444,3 +444,184 @@
     border-radius: 2px;
   }
 }
+
+// ---- expanding legend rows, detail view ----
+
+.dsm-shader-inspector-menu {
+  .dsm-si-heading-buttons,
+  .dsm-si-detail-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 6px 0;
+
+    .dcg-btn-light-gray {
+      margin: 0;
+      padding: 2px 10px;
+      font-size: 12px;
+    }
+  }
+
+  .dsm-si-legend-item {
+    border-radius: 4px;
+
+    &.dsm-si-open {
+      background: rgba(0, 0, 0, 0.035);
+    }
+  }
+
+  .dsm-si-legend-toggle {
+    cursor: pointer;
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.04);
+    }
+  }
+
+  .dsm-si-chevron {
+    flex-shrink: 0;
+    width: 10px;
+    font-size: 10px;
+    color: #888;
+  }
+
+  .dsm-si-expanded {
+    padding: 2px 6px 4px 22px;
+  }
+
+  .dsm-si-crumbs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 3px;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: #555;
+  }
+
+  .dsm-si-crumb {
+    display: inline-block;
+    max-width: 160px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+    color: @ok;
+    cursor: pointer;
+
+    &:hover {
+      text-decoration: underline;
+    }
+
+    &.dsm-si-crumb-current {
+      color: #222;
+      cursor: default;
+      text-decoration: none;
+    }
+  }
+
+  .dsm-si-crumb-sep {
+    margin: 0 2px;
+    color: #aaa;
+  }
+
+  .dsm-si-detail-heading {
+    margin-bottom: 6px;
+  }
+
+  .dsm-si-detail-name {
+    font-size: 15px;
+  }
+
+  .dsm-si-detail-math {
+    max-height: 160px;
+    overflow: auto;
+    padding: 4px 2px;
+    font-size: 16px;
+  }
+
+  .dsm-si-part {
+    border-radius: 3px;
+    cursor: pointer;
+
+    &:hover {
+      outline: 1.5px solid rgba(0, 0, 0, 0.55);
+    }
+  }
+
+  .dsm-si-metric-tiles {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    margin: 6px 0;
+  }
+
+  .dsm-si-metric-tile {
+    cursor: pointer;
+    border: 1.5px solid transparent;
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.06);
+    }
+
+    &.dsm-selected {
+      border-color: @ok;
+    }
+
+    .dsm-si-tile-value {
+      font-size: 14px;
+    }
+  }
+
+  .dsm-si-legend-name {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .dsm-si-part-row {
+    display: grid;
+    grid-template-columns: 10px 1fr auto;
+    align-items: center;
+    column-gap: 6px;
+    padding: 3px 4px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.05);
+    }
+  }
+
+  .dsm-si-part-name {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .dsm-si-part-from {
+    grid-column: 2;
+    font-size: 11px;
+    color: #888;
+  }
+
+  .dsm-si-part-value {
+    grid-column: 3;
+    grid-row: 1;
+    color: #555;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .dsm-si-part-meter {
+    grid-column: 2 / 4;
+    height: 3px;
+    border-radius: 2px;
+    background: @track;
+    overflow: hidden;
+  }
+
+  .dsm-si-part-meter-fill {
+    display: block;
+    height: 100%;
+  }
+}

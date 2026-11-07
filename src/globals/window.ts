@@ -47,6 +47,9 @@ interface Desmos extends DesmosPublic {
   };
   MathQuill: {
     getApiInstanceForElement: (el: Element) => null | MathQuillApi;
+    StaticMath: (el: Element) => MathQuillApi & {
+      latex: ((latex: string) => void) & (() => string);
+    };
   };
 }
 

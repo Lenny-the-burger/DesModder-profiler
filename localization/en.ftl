@@ -419,7 +419,7 @@ shader-inspector-color-function = Color function:{" "}
 shader-inspector-tile-slots = Uniform slots
 shader-inspector-tile-cost = Cost estimate
 shader-inspector-tile-steps = Loop steps per pixel
-shader-inspector-tile-lines = Lines of GLSL
+shader-inspector-tile-chars = GLSL characters
 shader-inspector-tile-recompiles = Recompiles
 shader-inspector-tile-programs = Shaders / surfaces
 shader-inspector-section-uniforms = Uniform slots
@@ -442,10 +442,10 @@ shader-inspector-loop-list = { $terms } elements × { $body } cost each = { $cos
 shader-inspector-loop-terms-tooltip = { $terms } of at most { $limit } terms
 shader-inspector-loops-caption = Each sum or product can have at most { $limit } terms. Nested ones multiply: the inner one runs once per term of the outer one, and its cost counts that many times.
 shader-inspector-section-glsl = Generated GLSL
-shader-inspector-glsl-share = { $lines ->
+shader-inspector-glsl-share = { $chars } characters, { $lines ->
     [one] 1 line
    *[other] { $lines } lines
-  }, { $chars } characters
+  }
 shader-inspector-helpers = Helper functions: { $helpers }
 shader-inspector-glsl-caption = Bigger shaders take longer to compile. Desmos adds its own lighting and helper code around this, the same for every surface.
 shader-inspector-show-code = Show code
@@ -456,10 +456,7 @@ shader-inspector-panel-slots = { $count ->
     [one] 1 slot
    *[other] { $count } slots
   }
-shader-inspector-panel-lines = { $count ->
-    [one] 1 line
-   *[other] { $count } lines
-  }
+shader-inspector-panel-chars = { $count } GLSL characters
 shader-inspector-panel-owner = The inspected shader
 shader-inspector-panel-none = Used by the inspected shader
 shader-inspector-reason-baked = Values past the limit changed ({ $count })
@@ -485,3 +482,46 @@ shader-inspector-cost-row-reduction = Reducing a list of length n: mean, total, 
 shader-inspector-cost-row-list = A list written out with n elements
 shader-inspector-cost-row-never = Integrals, map-style blocks, function calls that aren't inlined, distributions, and loops with bounds unknown at compile time: the shader can't be built
 shader-inspector-cost-help-loops = A sum or product costs its number of terms × the cost of one run of its body; a list operation costs the list length × its body. Nested ones multiply, so a sum inside a sum grows fast.
+shader-inspector-cost-row-heavy = Matrix operations: 9 to 300 each, up to 64 for multiplying
+shader-inspector-node-shader = Shader
+shader-inspector-part-restriction = Restriction
+shader-inspector-part-color = Color function
+shader-inspector-metric-cost = Cost
+shader-inspector-metric-uniforms = Uniform slots
+shader-inspector-metric-glsl = GLSL characters
+shader-inspector-metric-loops = Loop steps
+shader-inspector-unit-cost = cost { $value }
+shader-inspector-unit-uniforms = { $value } slots
+shader-inspector-unit-glsl = { $value } characters
+shader-inspector-unit-loops = { $value } loop steps per pixel
+shader-inspector-of-shader = { $percent } of the shader
+shader-inspector-of-parent = { $percent } of the part it's in
+shader-inspector-itself = { $value } by itself
+shader-inspector-cat-cost-never = Can't be in a shader
+shader-inspector-cat-cost-reduction = List reductions (5 per element)
+shader-inspector-cat-cost-list = Lists written out (1 per element)
+shader-inspector-cat-cost-heavy = Matrix operations
+shader-inspector-cat-cost-costly = Costly (5 each)
+shader-inspector-cat-cost-cheap = Cheap (1 each)
+shader-inspector-cat-cost-free = Free
+shader-inspector-cat-uniforms-single = Single values
+shader-inspector-cat-uniforms-list = List elements
+shader-inspector-cat-uniforms-baked = Past the limit, written into the shader
+shader-inspector-detail-hint = Highlighted parts are colored by what they add the most of. Click one to look inside it.
+shader-inspector-detail-loop = { $kind }: { $terms } terms × { $body } cost each, runs { $runs }× per pixel
+shader-inspector-loop-kind-sum = Sum
+shader-inspector-loop-kind-product = Product
+shader-inspector-loop-kind-list = List operation
+shader-inspector-detail-lists = Lists: { $lists }
+shader-inspector-parts = Parts
+shader-inspector-inlined = from another expression
+shader-inspector-go-to = Go to expression
+shader-inspector-open-flame = Flame graph
+shader-inspector-open-detail = Details
+shader-inspector-open-detail-shader = Break it down
+shader-inspector-untraced-detail = Code Desmos added that couldn't be traced to an expression.
+shader-inspector-flame-title = Shader flame graph
+shader-inspector-flame-metric = What to measure
+shader-inspector-flame-close = Close
+shader-inspector-flame-empty = Nothing in this shader adds to this.
+shader-inspector-flame-hint = Hover over a bar to see what it adds. Click it to zoom in and see it in detail; Esc zooms back out.

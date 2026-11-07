@@ -2,6 +2,8 @@ import ShaderInspector, { LimitErrorRow, SurfaceRow } from ".";
 import "./ShaderInspectorView.less";
 import { MAX_LOOP_TERMS, RECOMPILE_REASONS } from "./analyze";
 import { LoopRow, Origin, PartReport, UniformGroup, usageOf } from "./report";
+import { DetailView } from "./DetailView";
+import { fmt, latexToText } from "./text";
 import { Component, jsx } from "#DCGView";
 import {
   Button,
@@ -26,25 +28,6 @@ interface Segment {
   tooltip: string;
 }
 
-const fmt = (n: number) =>
-  Number.isFinite(n) ? Math.round(n).toLocaleString() : "∞";
-
-/** A rough plain-text rendering of LaTeX, for tooltips. */
-export function latexToText(latex: string) {
-  return latex
-    .replace(/\\left|\\right/g, "")
-    .replace(/\\operatorname\{([^}]*)\}/g, "$1")
-    .replace(/\\(?:mathrm|text)\{([^}]*)\}/g, "$1")
-    .replace(/_\{([^}]*)\}/g, "_$1")
-    .replace(/\\cdot/g, "·")
-    .replace(/\\(sum|prod)/g, (_, s: string) => (s === "sum" ? "Σ" : "Π"))
-    .replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, "($1)/($2)")
-    .replace(/\\([a-zA-Z]+)/g, "$1")
-    .replace(/[{}]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function shortLabel(si: ShaderInspector, origin: Origin) {
   if (origin === undefined) return format("shader-inspector-untraced");
   const latex = si.expressionLatex(origin);
@@ -58,6 +41,7 @@ const COST_ROWS: readonly CostRow[] = [
   ["0", "free"],
   ["1", "cheap"],
   ["5", "costly"],
+  ["9–300", "heavy"],
   ["5 × n", "reduction"],
   ["n", "list"],
   ["∞", "never"],
@@ -154,7 +138,11 @@ export class ShaderInspectorView extends Component<{
                 <Button
                   color="light-gray"
                   class="dsm-si-back"
-                  onTap={() => this.si().select(undefined)}
+                  onTap={() =>
+                    this.si().detailOpen
+                      ? this.si().closeDetail()
+                      : this.si().select(undefined)
+                  }
                 >
                   ‹
                 </Button>
@@ -176,8 +164,23 @@ export class ShaderInspectorView extends Component<{
         <If predicate={() => this.si().selectedId === undefined}>
           {() => this.picker()}
         </If>
-        <If predicate={() => this.si().selectedId !== undefined}>
+        <If
+          predicate={() =>
+            this.si().selectedId !== undefined && !this.si().detailOpen
+          }
+        >
           {() => this.detail()}
+        </If>
+        <If
+          predicate={() =>
+            this.si().selectedId !== undefined && this.si().detailOpen
+          }
+        >
+          {() => (
+            <div class="dsm-si-detail">
+              <DetailView si={() => this.si()} inFlame={false} />
+            </div>
+          )}
         </If>
       </div>
     );
@@ -374,6 +377,17 @@ export class ShaderInspectorView extends Component<{
               <div class="dsm-si-heading">
                 {this.label(() => this.report()?.id)}
               </div>
+              <div class="dsm-si-heading-buttons">
+                <Button
+                  color="light-gray"
+                  onTap={() => this.si().openDetail([])}
+                >
+                  {format("shader-inspector-open-detail-shader")}
+                </Button>
+                <Button color="light-gray" onTap={() => this.si().flame.open()}>
+                  {format("shader-inspector-open-flame")}
+                </Button>
+              </div>
               <If predicate={() => this.report()!.colorId !== undefined}>
                 {() => (
                   <div class="dsm-si-line dsm-si-dim">
@@ -424,7 +438,7 @@ export class ShaderInspectorView extends Component<{
       const m = report.material;
       const maxCost = Math.max(0, ...report.parts.map((p) => p.cost));
       const costLimit = report.parts[0]?.costLimit ?? 1;
-      const lines = report.parts.reduce((n, p) => n + p.lines.length, 0);
+      const chars = report.parts.reduce((n, p) => n + p.chars, 0);
       const steps = report.parts.reduce((n, p) => n + p.loopSteps, 0);
       const row = this.si().selectedRow();
       return [
@@ -447,9 +461,9 @@ export class ShaderInspectorView extends Component<{
           bad: false,
         },
         {
-          key: "lines",
-          label: format("shader-inspector-tile-lines"),
-          value: fmt(lines),
+          key: "chars",
+          label: format("shader-inspector-tile-chars"),
+          value: fmt(chars),
           bad: false,
         },
         {
@@ -607,6 +621,7 @@ export class ShaderInspectorView extends Component<{
           >
             {(l: () => { origin: Origin; text: string; bad: boolean }) =>
               this.legendRow(
+                () => "uniforms",
                 () => l().origin,
                 () => l().text,
                 () => l().bad
@@ -650,20 +665,75 @@ export class ShaderInspectorView extends Component<{
       });
   }
 
-  legendRow(origin: () => Origin, text: () => string, bad?: () => boolean) {
+  /**
+   * A legend row, which opens to show what its expression adds and buttons to
+   * see it in detail or go to it.
+   */
+  legendRow(
+    section: () => string,
+    origin: () => Origin,
+    text: () => string,
+    bad?: () => boolean
+  ) {
+    const key = () => `${section()}:${origin()}`;
+    const open = () => this.si().expanded === key();
     return (
       <div
-        class={() => ({
-          "dsm-si-legend-row": true,
-          "dsm-si-bad-text": !!bad?.(),
-        })}
+        class={() => ({ "dsm-si-legend-item": true, "dsm-si-open": open() })}
       >
-        <span
-          class="dsm-si-swatch"
-          style={() => ({ background: this.si().originColor(origin()) })}
-        />
-        {this.label(origin)}
-        <span class="dsm-si-legend-value">{text}</span>
+        <div
+          class={() => ({
+            "dsm-si-legend-row": true,
+            "dsm-si-legend-toggle": true,
+            "dsm-si-bad-text": !!bad?.(),
+          })}
+          role="button"
+          tabindex="0"
+          onTap={() => this.si().toggleExpanded(key())}
+        >
+          <span class="dsm-si-chevron">{() => (open() ? "▾" : "▸")}</span>
+          <span
+            class="dsm-si-swatch"
+            style={() => ({ background: this.si().originColor(origin()) })}
+          />
+          {this.label(origin, false)}
+          <span class="dsm-si-legend-value">{text}</span>
+        </div>
+        <If predicate={open}>
+          {() => (
+            <div class="dsm-si-expanded">
+              <div class="dsm-si-line">
+                {() => {
+                  const o = origin();
+                  return o === undefined
+                    ? format("shader-inspector-untraced-detail")
+                    : usageSummary(this.si(), o);
+                }}
+              </div>
+              <div class="dsm-si-detail-buttons">
+                <Button
+                  color="light-gray"
+                  onTap={() => this.si().openDetail(this.si().pathOf(origin()))}
+                >
+                  {format("shader-inspector-open-detail")}
+                </Button>
+                <If predicate={() => origin() !== undefined}>
+                  {() => (
+                    <Button
+                      color="light-gray"
+                      onTap={() => {
+                        const o = origin();
+                        if (o !== undefined) this.si().jumpTo(o);
+                      }}
+                    >
+                      {format("shader-inspector-go-to")}
+                    </Button>
+                  )}
+                </If>
+              </div>
+            </div>
+          )}
+        </If>
       </div>
     );
   }
@@ -717,6 +787,7 @@ export class ShaderInspectorView extends Component<{
           >
             {(s: () => { origin: Origin; cost: number }) =>
               this.legendRow(
+                () => `cost-${p().part}`,
                 () => s().origin,
                 () =>
                   `${fmt(s().cost)} (${Math.round((100 * s().cost) / Math.max(1, p().cost))}%)`
@@ -869,6 +940,7 @@ export class ShaderInspectorView extends Component<{
           <For each={shares} key={(s: { origin: Origin }) => `${s.origin}`}>
             {(s: () => { origin: Origin; lines: number; chars: number }) =>
               this.legendRow(
+                () => "glsl",
                 () => s().origin,
                 () =>
                   format("shader-inspector-glsl-share", {
@@ -985,6 +1057,40 @@ function groupNames(names: string[]) {
 }
 
 /** Under an expression in the list: what it adds to the inspected shader. */
+/** What an expression adds to the inspected shader, in a line. */
+function usageSummary(si: ShaderInspector, id: string) {
+  const report = si.report();
+  if (!report) return "";
+  const u = usageOf(report, id);
+  const parts: string[] = [];
+  if (u.slots > 0)
+    parts.push(
+      format("shader-inspector-panel-slots", { count: u.slots }) +
+        (u.lists.length > 0
+          ? ` (${groupNames(u.lists.map((l) => `${l.type}[${l.length}]`))})`
+          : "")
+    );
+  if (u.baked > 0)
+    parts.push(format("shader-inspector-overflow", { count: u.baked }));
+  if (u.cost > 0)
+    parts.push(format("shader-inspector-cost-short", { cost: fmt(u.cost) }));
+  for (const l of u.loops)
+    parts.push(
+      `${l.kind === "sum" ? "Σ" : l.kind === "product" ? "Π" : "[ ]"} ${fmt(l.terms)}`
+    );
+  if (u.chars > 0)
+    parts.push(format("shader-inspector-panel-chars", { count: fmt(u.chars) }));
+  if (parts.length === 0)
+    parts.push(
+      format(
+        id === report.id
+          ? "shader-inspector-panel-owner"
+          : "shader-inspector-panel-none"
+      )
+    );
+  return parts.join(" · ");
+}
+
 export class ExpressionPanel extends Component<{
   si: () => ShaderInspector;
   id: () => string;
@@ -992,37 +1098,7 @@ export class ExpressionPanel extends Component<{
   si = () => this.props.si();
 
   text() {
-    const report = this.si().report();
-    if (!report) return "";
-    const id = this.props.id();
-    const u = usageOf(report, id);
-    const parts: string[] = [];
-    if (u.slots > 0)
-      parts.push(
-        format("shader-inspector-panel-slots", { count: u.slots }) +
-          (u.lists.length > 0
-            ? ` (${groupNames(u.lists.map((l) => `${l.type}[${l.length}]`))})`
-            : "")
-      );
-    if (u.baked > 0)
-      parts.push(format("shader-inspector-overflow", { count: u.baked }));
-    if (u.cost > 0)
-      parts.push(format("shader-inspector-cost-short", { cost: fmt(u.cost) }));
-    for (const l of u.loops)
-      parts.push(
-        `${l.kind === "sum" ? "Σ" : l.kind === "product" ? "Π" : "[ ]"} ${fmt(l.terms)}`
-      );
-    if (u.lines > 0)
-      parts.push(format("shader-inspector-panel-lines", { count: u.lines }));
-    if (parts.length === 0)
-      parts.push(
-        format(
-          id === report.id
-            ? "shader-inspector-panel-owner"
-            : "shader-inspector-panel-none"
-        )
-      );
-    return parts.join(" · ");
+    return usageSummary(this.si(), this.props.id());
   }
 
   template() {

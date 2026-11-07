@@ -12,6 +12,14 @@ import {
   analyzeMaterial,
   analyzeShader,
 } from "./analyze";
+import {
+  SpanNode,
+  addShader,
+  finishTree,
+  lineFrames,
+  listOfUniforms,
+  newNode,
+} from "./tree";
 import type { LoopKind, ShaderSourceInfo, WorkerLoop } from "./worker";
 
 export type ShaderPart = "restriction" | "color";
@@ -91,14 +99,12 @@ export interface ShaderReport {
   lists: UniformGroup[];
   /** Every expression that contributes, in order of first appearance. */
   origins: Origin[];
+  /** The parts of the expressions behind the shader. */
+  tree: SpanNode;
 }
 
 /** Resolve the LaTeX the worker recorded to an expression id. */
 export type ResolveSource = (latex: string) => string | undefined;
-
-const LIST_DECL = /^(\w+)\[(\d+)\] _C(\d+)=buildList\(/;
-const ASSIGN = /^_(\d+)=/;
-const LOOP = /^for\(_(\d+)=/;
 
 function originOf(
   info: ShaderSourceInfo | undefined,
@@ -107,7 +113,8 @@ function originOf(
   resolve: ResolveSource
 ): Origin {
   if (!info || index === undefined || index < 0) return owner;
-  const latex = info.sources[index];
+  const frame = info.frames[index];
+  const latex = frame ? info.sources[frame[0]] : undefined;
   return latex === undefined ? owner : (resolve(latex) ?? undefined);
 }
 
@@ -118,20 +125,10 @@ export function attributeLines(
   resolve: ResolveSource
 ): GlslLine[] {
   const info = shader.dsmInfo;
-  const lines = shader.source.split("\n").filter((l) => l.trim() !== "");
-  let previous: Origin = owner;
-  return lines.map((text) => {
-    let m: RegExpExecArray | null;
-    let origin: Origin = previous;
-    if ((m = LIST_DECL.exec(text)))
-      origin = originOf(info, info?.lists[Number(m[3])], owner, resolve);
-    else if ((m = ASSIGN.exec(text) ?? LOOP.exec(text)))
-      origin = originOf(info, info?.instructions[Number(m[1])], owner, resolve);
-    else if (text.startsWith("return ") || /^(float|vec\d|bool) _/.test(text))
-      origin = owner;
-    previous = origin;
-    return { text, origin };
-  });
+  return lineFrames(shader).map(({ text, frame }) => ({
+    text,
+    origin: originOf(info, frame, owner, resolve),
+  }));
 }
 
 function loopRows(
@@ -177,7 +174,7 @@ export function partReport(
   const info = shader.dsmInfo;
   const parsed = analyzeShader(shader);
   const shares = new Map<Origin, number>();
-  for (const [src, cost] of info?.cost ?? []) {
+  for (const [src, , cost] of info?.cost ?? []) {
     if (!(cost > 0)) continue;
     const o = originOf(info, src, owner, resolve);
     shares.set(o, (shares.get(o) ?? 0) + cost);
@@ -225,17 +222,7 @@ function uniformGroups(
   const { lists } = analyzeShader(shader);
   const singles = new Map<Origin, UniformGroup>();
   const listGroups: UniformGroup[] = [];
-  // Lists use their uniforms in order, before any single value printed after
-  // them; walk the uniform indices in the order the source uses them.
-  const listOfUniform: (number | undefined)[] = [];
-  const declLines = shader.source.split("\n");
-  for (const line of declLines) {
-    const m = LIST_DECL.exec(line);
-    if (!m) continue;
-    const k = Number(m[3]);
-    for (const u of line.matchAll(/_DCG_SC_(\d+)/g))
-      listOfUniform[Number(u[1])] = k;
-  }
+  const listOfUniform = listOfUniforms(shader);
   const byList = new Map<number, UniformGroup>();
   const listGroup = (k: number) => {
     let g = byList.get(k);
@@ -292,6 +279,7 @@ export function shaderReport(opts: {
   const singles: UniformGroup[] = [];
   const lists: UniformGroup[] = [];
   let used = 0;
+  const tree = newNode("shader", "shader", id);
   const entries: [ShaderPart, InspectedShader | undefined, string][] = [
     ["restriction", shaders.restriction, id],
     ["color", shaders.color, colorId ?? id],
@@ -314,7 +302,18 @@ export function shaderReport(opts: {
     );
     singles.push(...groups.singles);
     lists.push(...groups.lists);
+    const partNode = newNode(part, "part", owner, { part });
+    tree.children.push(partNode);
+    addShader(
+      partNode,
+      shader,
+      owner,
+      resolve,
+      fits,
+      shader.shaderUniforms.length >= budget
+    );
   }
+  finishTree(tree);
   const origins: Origin[] = [];
   const see = (o: Origin) => {
     if (!origins.includes(o)) origins.push(o);
@@ -334,6 +333,7 @@ export function shaderReport(opts: {
     singles,
     lists,
     origins,
+    tree,
   };
 }
 
@@ -344,6 +344,8 @@ export interface OriginUsage {
   lists: ListInfo[];
   cost: number;
   lines: number;
+  /** Characters of GLSL. */
+  chars: number;
   loops: LoopRow[];
 }
 
@@ -354,6 +356,7 @@ export function usageOf(report: ShaderReport, origin: Origin): OriginUsage {
     lists: [],
     cost: 0,
     lines: 0,
+    chars: 0,
     loops: [],
   };
   for (const g of [...report.singles, ...report.lists]) {
@@ -364,7 +367,11 @@ export function usageOf(report: ShaderReport, origin: Origin): OriginUsage {
   }
   for (const p of report.parts) {
     for (const s of p.costShares) if (s.origin === origin) u.cost += s.cost;
-    for (const l of p.lines) if (l.origin === origin) u.lines++;
+    for (const l of p.lines)
+      if (l.origin === origin) {
+        u.lines++;
+        u.chars += l.text.length + 1;
+      }
     for (const l of p.loops) if (l.origin === origin) u.loops.push(l);
   }
   return u;
