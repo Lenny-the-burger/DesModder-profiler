@@ -139,7 +139,13 @@ export class Lab {
     const { Desmos } = window as unknown as {
       Desmos: { Calculator3D: (el: HTMLElement, opts: object) => LabCalc };
     };
-    this.calc = Desmos.Calculator3D(this.el, { ignoreCostEstimate: true });
+    // No expression list: the lab never shows one, and drawing it while the
+    // calculator is still being built can ask for the evaluator before it
+    // exists ("reading 'evaluationProgressById'").
+    this.calc = Desmos.Calculator3D(this.el, {
+      ignoreCostEstimate: true,
+      expressions: false,
+    });
     // Desmos gives a shader at most 427 slots and writes the rest into its
     // source, so its uniform list stops at 427. With the limit raised (the
     // worker reads it from the grapher), the list has every slot the shader
