@@ -14,7 +14,8 @@
  *   lists of slots. It costs the shader the work of computing those values
  *   per pixel. That is `pushToGpu`.
  *
- * - Desmos doesn't allow a `with` inside another `with`.
+ * - Desmos doesn't allow a `with` written inside another `with` in the same
+ *   expression. One reached through a definition or a function body is fine.
  */
 import type { Aug } from "../../../text-mode-core";
 import type { Value } from "./rewrite";
@@ -246,7 +247,8 @@ function plusZero(s: string, v: Value, w: string): Child {
 
 /**
  * `node with s=s+0w, …`, joined into `node`'s own `with` if it is one.
- * Undefined if `node` has a `with` further in, which can't hold another.
+ * Undefined if `node` has a `with` written further in, which can't be
+ * nested in another.
  */
 function withPushed(node: Child, push: Aug.Latex.AssignmentExpression[]) {
   if (node.type === "Substitution") {
