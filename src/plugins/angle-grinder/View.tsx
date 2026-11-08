@@ -109,9 +109,15 @@ class Changes extends Component<Props> {
         <If predicate={() => ag().showChanges}>
           {() => (
             <div class="dsm-ag-diffs">
-              <div class="dsm-ag-help">
-                {format("angle-grinder-changes-help")}
-              </div>
+              <If
+                predicate={() => diffs().some((d) => d.before.parts.length > 0)}
+              >
+                {() => (
+                  <div class="dsm-ag-help">
+                    {format("angle-grinder-changes-help")}
+                  </div>
+                )}
+              </If>
               <For each={() => diffs()} key={(d) => d.id}>
                 {(d: () => ExpressionDiff) => (
                   <div class="dsm-ag-diff">
