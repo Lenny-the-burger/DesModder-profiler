@@ -1,5 +1,7 @@
 import AngleGrinder, { SliderRow, Status } from ".";
+import { MarkedMath } from "./MarkedMath";
 import "./View.less";
+import type { ExpressionDiff, MarkedPart } from "./diff";
 import { ShaderChange, UNIFORM_BUDGET, shaderChanges, totals } from "./summary";
 import { Component, jsx } from "#DCGView";
 import {
@@ -79,6 +81,82 @@ class SliderList extends Component<Props> {
   }
 }
 
+class Changes extends Component<Props> {
+  template() {
+    const ag = () => this.props.ag();
+    const diffs = () => resultOf(ag().status)?.diffs ?? [];
+    const title = (p: MarkedPart) =>
+      format("angle-grinder-diff-part", { count: p.size });
+    const pick = (p: MarkedPart) => ag().jumpToDefinition(p.symbol);
+    return (
+      <div class="dsm-ag-section">
+        <div class="dsm-ag-section-head">
+          <span class="dsm-ag-heading">
+            {() => format("angle-grinder-changes", { count: diffs().length })}
+          </span>
+          <span
+            class="dsm-ag-link"
+            role="button"
+            onTap={() => ag().toggleChanges()}
+          >
+            {() =>
+              ag().showChanges
+                ? format("angle-grinder-hide")
+                : format("angle-grinder-show")
+            }
+          </span>
+        </div>
+        <If predicate={() => ag().showChanges}>
+          {() => (
+            <div class="dsm-ag-diffs">
+              <div class="dsm-ag-help">
+                {format("angle-grinder-changes-help")}
+              </div>
+              <For each={() => diffs()} key={(d) => d.id}>
+                {(d: () => ExpressionDiff) => (
+                  <div class="dsm-ag-diff">
+                    <div
+                      class="dsm-ag-diff-name"
+                      role="button"
+                      onTap={() => ag().jumpTo(d().id)}
+                    >
+                      {() =>
+                        format("angle-grinder-shader-restriction", {
+                          n: ag().expressionNumber(d().id),
+                        })
+                      }
+                    </div>
+                    <div class="dsm-ag-diff-line dsm-ag-diff-before">
+                      <span class="dsm-ag-diff-sign">−</span>
+                      <MarkedMath
+                        marked={() => d().before}
+                        renderKey={() => `${d().id}:before`}
+                        partClass={() => "dsm-ag-part-before"}
+                        title={title}
+                        onPick={pick}
+                      />
+                    </div>
+                    <div class="dsm-ag-diff-line dsm-ag-diff-after">
+                      <span class="dsm-ag-diff-sign">+</span>
+                      <MarkedMath
+                        marked={() => d().after}
+                        renderKey={() => `${d().id}:after`}
+                        partClass={() => "dsm-ag-part-after"}
+                        title={title}
+                        onPick={pick}
+                      />
+                    </div>
+                  </div>
+                )}
+              </For>
+            </div>
+          )}
+        </If>
+      </div>
+    );
+  }
+}
+
 class Results extends Component<Props> {
   template() {
     const ag = () => this.props.ag();
@@ -149,6 +227,9 @@ class Results extends Component<Props> {
             })
           }
         </div>
+        <If predicate={() => result().diffs.length > 0}>
+          {() => <Changes ag={ag} />}
+        </If>
         <If predicate={() => result().skipped.length > 0}>
           {() => (
             <div class="dsm-ag-note">

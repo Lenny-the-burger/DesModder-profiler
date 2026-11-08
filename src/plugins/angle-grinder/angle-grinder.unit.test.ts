@@ -14,7 +14,9 @@ import {
   roundTrips,
   substitute,
   valueNode,
+  Value,
 } from "./rewrite";
+import { diffOf, shortNumber } from "./diff";
 import type { GraphState } from "../../../graph-state";
 import "../../tests/run_calc_for_tests";
 
@@ -212,5 +214,39 @@ describe("shader expressions", () => {
       (e) => e.id
     );
     expect(ids.sort()).toEqual(["2", "3", "4"]);
+  });
+});
+
+describe("diffs", () => {
+  const values = new Map<string, Value>([
+    ["a", { type: "number", value: 0.1 + 0.2 }],
+    ["L", { type: "list", value: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }],
+    ["p", { type: "point", value: [1, -2e-12, 3] }],
+  ]);
+  test("marks the variables before and their values after", () => {
+    const root = parseRootLatex(
+      cfg,
+      String.raw`z=a+\operatorname{total}(L)+p.x+a`
+    );
+    const d = diffOf(cfg, "1", root, ["a", "L", "p"], values);
+    expect(d.before.parts.map((p) => p.symbol)).toEqual(["a", "L", "p", "a"]);
+    expect(d.after.parts.map((p) => p.size)).toEqual([1, 10, 3, 1]);
+    expect(d.before.plain).toBe(
+      String.raw`z=a+\operatorname{total}\left(L\right)+p.x+a`
+    );
+    expect(d.after.plain).toBe(
+      String.raw`z=0.3+\operatorname{total}\left(\left[1,2,3,...,10\right]\right)+\left(1,-2\times10^{-12},3\right).x+0.3`
+    );
+    expect(d.before.latex).toContain(String.raw`\textcolor{#000002}{L}`);
+  });
+  test("leaves bound names alone", () => {
+    const root = parseRootLatex(cfg, "f(a)=a+L");
+    const d = diffOf(cfg, "1", root, ["a", "L"], values);
+    expect(d.before.parts.map((p) => p.symbol)).toEqual(["L"]);
+  });
+  test("short numbers", () => {
+    expect(shortNumber(NaN)).toBe(String.raw`\operatorname{undefined}`);
+    expect(shortNumber(-Infinity)).toBe(String.raw`-\infty`);
+    expect(shortNumber(1234567.89)).toBe("1234570");
   });
 });

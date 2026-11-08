@@ -41,6 +41,8 @@ export default class AngleGrinder extends PluginController {
   sliders: SliderRow[] = [];
   /** Sliders the user marked as fixed. Everything else keeps varying. */
   frozen = new Set<string>();
+  /** Whether the list of changed expressions is open. */
+  showChanges = false;
 
   afterEnable() {
     this.dsm.pillboxMenus?.addPillboxButton({
@@ -111,6 +113,21 @@ export default class AngleGrinder extends PluginController {
   varyAll() {
     this.frozen.clear();
     this.update();
+  }
+
+  toggleChanges() {
+    this.showChanges = !this.showChanges;
+    this.update();
+  }
+
+  /** Jump to the expression defining a variable that was written in. */
+  jumpToDefinition(symbol: string) {
+    const s = this.status;
+    const id =
+      s.type === "done" || s.type === "applied"
+        ? s.result.definedIn.get(symbol)
+        : undefined;
+    if (id !== undefined) this.jumpTo(id);
   }
 
   get running() {

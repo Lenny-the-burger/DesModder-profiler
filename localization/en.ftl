@@ -425,6 +425,17 @@ angle-grinder-new-errors = { $count ->
     [one] 1 expression has an error it didn't have before. Don't apply this.
    *[other] { $count } expressions have errors they didn't have before. Don't apply this.
   }
+angle-grinder-changes = { $count ->
+    [one] 1 changed expression
+   *[other] { $count } changed expressions
+  }
+angle-grinder-show = Show
+angle-grinder-hide = Hide
+angle-grinder-changes-help = Highlighted variables were replaced by their values. Values are shown rounded, with long lists shortened; the graph gets them in full. Click a value to go to its definition.
+angle-grinder-diff-part = { $count ->
+    [one] 1 number
+   *[other] { $count } numbers
+  }. Click to go to its definition.
 angle-grinder-apply = Apply to graph
 angle-grinder-apply-help = Treat the result as compiled output: keep a copy of the graph as it is now to edit, and grind it again after changing it.
 angle-grinder-applied = Applied. Undo or Restore puts the graph back.

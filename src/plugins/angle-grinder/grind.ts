@@ -15,6 +15,7 @@ import {
   shaderExpressions,
   varyingSymbols,
 } from "./analyze";
+import { ExpressionDiff, diffOf } from "./diff";
 import { Lab, Measurement } from "./lab";
 import {
   Value,
@@ -53,6 +54,10 @@ export interface GrindResult {
   inlined: string[];
   /** Expressions that changed. */
   rewritten: string[];
+  /** How each changed expression changed, in graph order. */
+  diffs: ExpressionDiff[];
+  /** The expression defining each written-in variable. */
+  definedIn: Map<string, string>;
   skipped: Skipped[];
   before: Measurement;
   after: Measurement;
@@ -135,6 +140,7 @@ export async function grind(
     const latex = new Map<string, string>();
     const skipped: Skipped[] = [];
     const usedBy = new Map<string, Set<string>>();
+    const roots = new Map<string, Aug.Latex.AnyRootOrChild>();
     for (const e of shaderExpressions(a, constants)) {
       const used = new Set<string>();
       const root = substitute(e.root, literals, used);
@@ -145,6 +151,7 @@ export async function grind(
       }
       latex.set(e.id, printLatex(cfg, root));
       usedBy.set(e.id, used);
+      roots.set(e.id, e.root);
     }
 
     progress("verify");
@@ -176,6 +183,12 @@ export async function grind(
       newErrors = newErrorsOf(before, after);
     }
 
+    const diffs: ExpressionDiff[] = [];
+    for (const e of a.exprs)
+      if (latex.has(e.id))
+        diffs.push(
+          diffOf(cfg, e.id, roots.get(e.id)!, usedBy.get(e.id)!, values)
+        );
     const inlined = new Set<string>();
     for (const id of latex.keys())
       for (const s of usedBy.get(id) ?? []) inlined.add(s);
@@ -206,6 +219,10 @@ export async function grind(
       state: out,
       inlined: [...inlined],
       rewritten: [...latex.keys()],
+      diffs,
+      definedIn: new Map(
+        [...inlined].map((s) => [s, a.definitions.get(s)!.id])
+      ),
       skipped,
       before,
       after,
