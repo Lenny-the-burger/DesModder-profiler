@@ -415,6 +415,34 @@ export function analyzeGraph(cfg: Config, state: GraphState): GraphAnalysis {
   };
 }
 
+function containsRestriction(node: Node): boolean {
+  if (node.type === "Restriction") return true;
+  let found = false;
+  forEachChild(node, new Set(), (c) => {
+    if (!found && containsRestriction(c)) found = true;
+  });
+  return found;
+}
+
+/**
+ * Expressions whose shaders exist only while they are drawn: inequalities
+ * and anything with a restriction. Color functions compile without that.
+ */
+export function drawnForShaders(a: GraphAnalysis): Set<string> {
+  const out = new Set<string>();
+  for (const e of a.exprs) {
+    if (e.isFunction || e.id.includes(":")) continue;
+    const r = e.root;
+    if (
+      r.type === "Comparator" ||
+      r.type === "ComparatorChain" ||
+      containsRestriction(r)
+    )
+      out.add(e.id);
+  }
+  return out;
+}
+
 /**
  * Symbols that can change: the varying sliders, everything actions update,
  * regression parameters, and everything defined from those.

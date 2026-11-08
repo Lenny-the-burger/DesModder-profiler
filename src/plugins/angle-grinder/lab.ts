@@ -53,12 +53,20 @@ export interface Measurement {
 const sleep = async (ms: number) =>
   await new Promise((resolve) => setTimeout(resolve, ms));
 
-/** `state` with no slider playing and the ticker stopped. */
-export function stopped(state: GraphState): GraphState {
+/**
+ * `state` with no slider playing and the ticker stopped, and every
+ * expression hidden except the ones in `draw`.
+ */
+export function stopped(
+  state: GraphState,
+  draw?: ReadonlySet<string>
+): GraphState {
   const copy: GraphState = JSON.parse(JSON.stringify(state));
-  for (const item of copy.expressions.list)
-    if (item.type === "expression" && item.slider?.isPlaying)
-      item.slider.isPlaying = false;
+  for (const item of copy.expressions.list) {
+    if (item.type !== "expression") continue;
+    if (item.slider?.isPlaying) item.slider.isPlaying = false;
+    if (draw && !draw.has(item.id)) item.hidden = true;
+  }
   if (copy.expressions.ticker) copy.expressions.ticker.playing = false;
   return copy;
 }
@@ -73,34 +81,47 @@ export function playingSliders(state: GraphState) {
 }
 
 export class Lab {
-  private constructor(
-    private readonly calc: LabCalc,
-    private readonly el: HTMLElement
-  ) {}
+  private calc: LabCalc | undefined;
+
+  private constructor(private readonly el: HTMLElement) {}
 
   static create(): Lab {
     const el = document.createElement("div");
     el.style.cssText =
       "position:fixed;left:-10000px;top:0;width:400px;height:300px;visibility:hidden";
     document.body.appendChild(el);
-    const { Desmos } = window as unknown as {
-      Desmos: { Calculator3D: (el: HTMLElement, opts: object) => LabCalc };
-    };
-    return new Lab(Desmos.Calculator3D(el, {}), el);
+    return new Lab(el);
   }
 
   destroy() {
-    this.calc.destroy();
+    this.calc?.destroy();
+    this.calc = undefined;
     this.el.remove();
+  }
+
+  private get loaded(): LabCalc {
+    if (!this.calc) throw new Error("Nothing is loaded in the lab");
+    return this.calc;
   }
 
   /**
    * Load `state` with every slider and the ticker stopped, so values are
    * read at the moment `state` was taken, and wait for Desmos to evaluate
-   * and compile it.
+   * and compile it. Each load gets a new calculator.
+   *
+   * Only expressions in `draw` are drawn. Every calculator on the page shares
+   * one evaluator worker, and meshing a heavy surface can keep it busy for
+   * minutes, during which neither the lab nor the graph on screen gets
+   * anything evaluated. Color functions compile without being drawn; only
+   * restrictions and inequalities need their surface drawn.
    */
-  async load(state: GraphState, timeout = 180000) {
-    this.calc.setState(stopped(state));
+  async load(state: GraphState, draw?: ReadonlySet<string>, timeout = 180000) {
+    this.calc?.destroy();
+    const { Desmos } = window as unknown as {
+      Desmos: { Calculator3D: (el: HTMLElement, opts: object) => LabCalc };
+    };
+    this.calc = Desmos.Calculator3D(this.el, {});
+    this.calc.setState(stopped(state, draw));
     await this.settle(timeout);
   }
 
@@ -109,7 +130,7 @@ export class Lab {
    * after everything already queued.
    */
   async settle(timeout = 180000) {
-    const h = this.calc.HelperExpression({ latex: "1" });
+    const h = this.loaded.HelperExpression({ latex: "1" });
     await this.waitFor([h], timeout);
     h.unobserveAll();
     // The 3D grapher picks up the new sketches on the next frames.
@@ -127,7 +148,7 @@ export class Lab {
 
   async evaluate(latexes: string[], timeout = 180000): Promise<Helper[]> {
     const helpers = latexes.map((latex) =>
-      this.calc.HelperExpression({ latex })
+      this.loaded.HelperExpression({ latex })
     );
     await this.waitFor(helpers, timeout);
     for (const h of helpers) h.unobserveAll();
@@ -187,7 +208,7 @@ export class Lab {
 
   measure(): Measurement {
     const shaders: ShaderStat[] = [];
-    const all = this.calc.controller.getAllShaders();
+    const all = this.loaded.controller.getAllShaders();
     for (const [id, s] of Object.entries(all))
       if (s)
         shaders.push({
@@ -195,7 +216,7 @@ export class Lab {
           uniforms: s.shaderUniforms.length,
           cost: s.costEstimate,
         });
-    const sketches = this.calc.controller.grapher3d?.graphSketches ?? {};
+    const sketches = this.loaded.controller.grapher3d?.graphSketches ?? {};
     for (const [id, sketch] of Object.entries(sketches))
       sketch?.branches?.forEach((b, i) => {
         const s = b.restrictionShader;
@@ -207,7 +228,7 @@ export class Lab {
           });
       });
     const errors = new Map<string, string>();
-    for (const [id, a] of Object.entries(this.calc.expressionAnalysis))
+    for (const [id, a] of Object.entries(this.loaded.expressionAnalysis))
       if (a?.isError) errors.set(id, a.errorMessage ?? "error");
     return { shaders, errors };
   }

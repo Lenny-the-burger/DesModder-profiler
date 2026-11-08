@@ -10,6 +10,7 @@ import { identifierToString, Aug } from "../../../text-mode-core";
 import {
   GraphAnalysis,
   analyzeGraph,
+  drawnForShaders,
   inlineCandidates,
   shaderExpressions,
   varyingSymbols,
@@ -112,7 +113,8 @@ export async function grind(
   const lab = Lab.create();
   try {
     progress("measure");
-    await lab.load(state);
+    const draw = drawnForShaders(a);
+    await lab.load(state, draw);
     const before = lab.measure();
 
     progress("evaluate");
@@ -147,7 +149,7 @@ export async function grind(
 
     progress("verify");
     let out = withLatex(state, latex);
-    await lab.load(out);
+    await lab.load(out, draw);
     let after = lab.measure();
     let newErrors = newErrorsOf(before, after);
     // Put back expressions that gained an error, and the rewritten
@@ -169,7 +171,7 @@ export async function grind(
       }
       if (revert.size === 0) break;
       out = withLatex(state, latex);
-      await lab.load(out);
+      await lab.load(out, draw);
       after = lab.measure();
       newErrors = newErrorsOf(before, after);
     }
