@@ -386,3 +386,46 @@ quake-pro-opt-dollyMagnification-name = Dolly Multiplier
 quake-pro-opt-dollyMagnification-desc = Heightens the zoom behavior by multiplying (dollying) the camera's viewport slider.
 quake-pro-opt-scalarZoomed-name = Scalar Cancellation
 quake-pro-opt-scalarZoomed-desc = Combats perspective distortion by multiplying (enlarging) the screen viewport (requires max zoom to be fully seen).
+
+## Angle Grinder
+angle-grinder-name = Angle Grinder
+angle-grinder-desc = In 3D, rewrites the graph so Desmos compiles cheaper shaders: values that never change are written into the expressions behind shaders, so they stop using uniform slots. The result works without DesModder.
+angle-grinder-intro = Writes values that never change into the expressions behind shaders, so Desmos puts them in the shader source instead of using a uniform slot for each number. The rewritten graph works without DesModder.
+angle-grinder-varying = What changes
+angle-grinder-varying-help = Checked sliders and draggable points keep working. Unchecked ones are fixed at their current value wherever a shader uses them.
+angle-grinder-freeze-still = Fix still ones
+angle-grinder-vary-all = Keep all
+angle-grinder-no-sliders = No sliders or draggable points.
+angle-grinder-tag-action = set by an action
+angle-grinder-tag-playing = playing
+angle-grinder-run = Grind
+angle-grinder-running = Grinding…
+angle-grinder-step-analyze = Reading expressions…
+angle-grinder-step-measure = Compiling the graph as it is…
+angle-grinder-step-evaluate = Evaluating values…
+angle-grinder-step-rewrite = Rewriting…
+angle-grinder-step-verify = Compiling the result…
+angle-grinder-uniforms = Uniform slots, all shaders
+angle-grinder-at-limit = Shaders at the { $budget } slot limit
+angle-grinder-max-cost = Highest shader cost
+angle-grinder-shader-color = Color of expression { $n }
+angle-grinder-shader-restriction = Expression { $n }
+angle-grinder-summary = Wrote { $values ->
+    [one] 1 value
+   *[other] { $values } values
+  } into { $expressions ->
+    [one] 1 expression
+   *[other] { $expressions } expressions
+  }.
+angle-grinder-skipped = { $count ->
+    [one] 1 expression was left as it was, because rewriting it changed what it does.
+   *[other] { $count } expressions were left as they were, because rewriting them changed what they do.
+  }
+angle-grinder-new-errors = { $count ->
+    [one] 1 expression has an error it didn't have before. Don't apply this.
+   *[other] { $count } expressions have errors they didn't have before. Don't apply this.
+  }
+angle-grinder-apply = Apply to graph
+angle-grinder-apply-help = Treat the result as compiled output: keep a copy of the graph as it is now to edit, and grind it again after changing it.
+angle-grinder-applied = Applied. Undo or Restore puts the graph back.
+angle-grinder-restore = Restore

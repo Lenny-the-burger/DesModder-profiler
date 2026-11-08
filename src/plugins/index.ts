@@ -30,6 +30,7 @@ import Wakatime from "./wakatime";
 import WolframToDesmos from "./wolfram2desmos";
 import BetterNavigation from "./better-navigation";
 import QuakePro from "./quake-pro";
+import AngleGrinder from "./angle-grinder";
 import OverrideKeystroke from "../core-plugins/override-keystroke";
 import { DispatchedEvent } from "src/globals/extra-actions";
 import ScrollBeyond from "./scroll-beyond";
@@ -166,6 +167,7 @@ export const keyToPlugin = {
   betterNavigation: BetterNavigation,
   pasteImage: PasteImage,
   quakePro: QuakePro,
+  angleGrinder: AngleGrinder,
 } satisfies Record<string, Plugin<any>>;
 
 export const pluginList = Object.values(keyToPlugin);
@@ -223,6 +225,7 @@ export class TransparentPlugins implements KeyToPluginInstance {
   get betterNavigation () { return this.ep["better-navigation"]} 
   get pasteImage () { return this.ep["paste-image"]; }
   get quakePro () { return this.ep["quake-pro"]; }
+  get angleGrinder () { return this.ep["angle-grinder"]; }
 }
 
 export type IDToPluginSettings = {
