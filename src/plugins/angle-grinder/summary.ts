@@ -12,6 +12,8 @@ export interface Totals {
   uniforms: number;
   /** Shaders that ran out of uniform slots. */
   atLimit: number;
+  /** Shaders Desmos rejects as too complicated. */
+  overCost: number;
   maxCost: number;
 }
 
@@ -20,6 +22,7 @@ export function totals(m: Measurement): Totals {
     shaders: m.shaders.length,
     uniforms: m.shaders.reduce((n, s) => n + s.uniforms, 0),
     atLimit: m.shaders.filter((s) => s.uniforms >= UNIFORM_BUDGET).length,
+    overCost: m.shaders.filter((s) => s.cost > COST_LIMIT).length,
     maxCost: Math.max(0, ...m.shaders.map((s) => s.cost)),
   };
 }

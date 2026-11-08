@@ -44,7 +44,18 @@ export default class AngleGrinder extends PluginController {
   /** Whether the list of changed expressions is open. */
   showChanges = false;
 
+  private dispatchListenerID: string | null = null;
+  /** Set while the plugin itself sets the graph's state. */
+  private settingState = false;
+  /** Bumped when another graph is loaded, so a grind of the old one is dropped. */
+  private generation = 0;
+
   afterEnable() {
+    this.dispatchListenerID = this.cc.dispatcher.register((e) => {
+      if (e.type !== "set-state" || this.settingState) return;
+      // After the dispatch, which views can't be updated in.
+      setTimeout(() => this.graphReplaced());
+    });
     this.dsm.pillboxMenus?.addPillboxButton({
       id: "dsm-angle-grinder-menu",
       tooltip: "angle-grinder-name",
@@ -58,6 +69,29 @@ export default class AngleGrinder extends PluginController {
 
   afterDisable() {
     this.dsm.pillboxMenus?.removePillboxButton("dsm-angle-grinder-menu");
+    if (this.dispatchListenerID !== null)
+      this.cc.dispatcher.unregister(this.dispatchListenerID);
+    this.dispatchListenerID = null;
+  }
+
+  /** Forget everything about the graph that was loaded before. */
+  private graphReplaced() {
+    this.generation++;
+    this.status = { type: "idle" };
+    this.frozen.clear();
+    this.showChanges = false;
+    this.refreshSliders();
+    this.update();
+  }
+
+  /** Set the graph's state without it counting as another graph. */
+  private setState(state: GraphState) {
+    this.settingState = true;
+    try {
+      this.calc.setState(state, { allowUndo: true });
+    } finally {
+      this.settingState = false;
+    }
   }
 
   private config() {
@@ -137,6 +171,7 @@ export default class AngleGrinder extends PluginController {
   async run() {
     if (this.running) return;
     const input = this.calc.getState();
+    const { generation } = this;
     const varyingSliders = new Set(
       this.sliders.filter((r) => this.isVarying(r)).map((r) => r.symbol)
     );
@@ -148,12 +183,15 @@ export default class AngleGrinder extends PluginController {
         input,
         { varyingSliders },
         (step) => {
+          if (generation !== this.generation) return;
           this.status = { type: "running", step };
           this.update();
         }
       );
+      if (generation !== this.generation) return;
       this.status = { type: "done", result, input };
     } catch (e) {
+      if (generation !== this.generation) return;
       this.status = {
         type: "error",
         message: e instanceof Error ? e.message : String(e),
@@ -190,7 +228,7 @@ export default class AngleGrinder extends PluginController {
     for (const item of result.state.expressions.list)
       if (result.added.includes(item.id) && !present.has(item.id))
         next.expressions.list.push(item);
-    this.calc.setState(next, { allowUndo: true });
+    this.setState(next);
     this.status = { type: "applied", result, source };
     this.update();
   }
@@ -198,7 +236,7 @@ export default class AngleGrinder extends PluginController {
   /** Put the graph back the way it was before applying. */
   restore() {
     if (this.status.type !== "applied") return;
-    this.calc.setState(this.status.source, { allowUndo: true });
+    this.setState(this.status.source);
     this.status = { type: "idle" };
     this.refreshSliders();
     this.update();

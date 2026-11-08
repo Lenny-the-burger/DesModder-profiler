@@ -3,17 +3,19 @@
  * it draws the same. The result is plain graph state that works without
  * DesModder.
  *
- * Four passes, each measured by compiling the result in an offscreen
- * calculator:
+ * Five passes, each measured by compiling the result in an offscreen
+ * calculator, which also compiles shaders Desmos would reject for their cost:
  *
  * 1. Values that don't change are typed into the expressions that end up in
  *    shaders, so the shader gets them as literals instead of uniform slots.
  * 2. Function calls and definitions are written out into the expressions
  *    shaders come from, and repeated parts moved into new definitions, so
  *    values read more than once share slots (see inline.ts).
- * 3. Products of a changing value and a sum are split when that folds the
+ * 3. Shaders over the cost limit get values that are affine in the pixel
+ *    folded out of their list comprehensions (see affine.ts).
+ * 4. Products of a changing value and a sum are split when that folds the
  *    changing part into fewer numbers (see `distribute`).
- * 4. Shaders still out of uniform slots compute what they need from the
+ * 5. Shaders still out of uniform slots compute what they need from the
  *    sliders themselves, if that stays under the cost limit (see `pushToGpu`).
  */
 import type { GraphState } from "../../../graph-state";
@@ -30,6 +32,7 @@ import {
   shaderExpressions,
   varyingSymbols,
 } from "./analyze";
+import { foldAffine } from "./affine";
 import { ExpressionDiff, diffOf } from "./diff";
 import { Names, ShaderPart, distribute, pushToGpu } from "./hot";
 import { Hoisted, hoistRepeats, inlineDefinitions } from "./inline";
@@ -80,8 +83,10 @@ export interface GrindResult {
   rewritten: string[];
   /** Expressions with function calls or definitions written out. */
   inlinedInto: string[];
-  /** Definitions added for parts that were written more than once. */
+  /** Definitions added for parts written more than once, or folded. */
   added: string[];
+  /** Expressions with affine values folded out of comprehensions. */
+  folded: string[];
   /** Expressions with products split. */
   split: string[];
   /** Expressions that compute changing values in the shader. */
@@ -174,8 +179,10 @@ interface Edit {
   typeIn: boolean;
   /** Functions and definitions written out. */
   inlined: string[];
-  /** New definitions for parts written more than once. */
+  /** New definitions for parts written more than once, or folded. */
   hoisted: Hoisted[];
+  /** Definitions folded into per-element lists. */
+  affine: string[];
   split: number;
   gpu: string[];
 }
@@ -185,6 +192,7 @@ const unchanged = (tree: Node): Edit => ({
   typeIn: false,
   inlined: [],
   hoisted: [],
+  affine: [],
   split: 0,
   gpu: [],
 });
@@ -361,6 +369,18 @@ export async function grind(
             worse = true;
             continue;
           }
+          if (s.cost > COST_LIMIT) {
+            // A shader over the cost limit doesn't work at all, so less cost
+            // is what counts. Taking more slots for it is fine if that gets
+            // it under the limit.
+            if (
+              n.cost < s.cost &&
+              (n.cost <= COST_LIMIT || n.uniforms <= s.uniforms)
+            )
+              better = true;
+            else worse = true;
+            continue;
+          }
           if (n.uniforms > s.uniforms) worse = true;
           else if (
             n.cost > s.cost &&
@@ -386,12 +406,17 @@ export async function grind(
       }
     };
 
+    const functions = new Map<string, Aug.Latex.FunctionDefinition>();
+    const variables = new Map<string, Aug.Latex.AnyChild>();
+    for (const e of a.definitions.values()) {
+      if (e.isFunction && e.root.type === "FunctionDefinition")
+        functions.set(e.defines!, e.root);
+      if (!e.isFunction && e.root.type === "Assignment")
+        variables.set(e.defines!, e.root.right);
+    }
+
     progress("inline");
     {
-      const functions = new Map<string, Aug.Latex.FunctionDefinition>();
-      for (const e of a.definitions.values())
-        if (e.isFunction && e.root.type === "FunctionDefinition")
-          functions.set(e.defines!, e.root);
       const perPixel = new Map<string, Aug.Latex.AnyChild>();
       for (const e of targets)
         if (
@@ -421,6 +446,31 @@ export async function grind(
         tried.set(id, next);
       }
       await keepBetter("inline", tried);
+    }
+
+    progress("fold");
+    {
+      const tried = new Map<string, Edit>();
+      for (const s of after.shaders) {
+        if (s.cost <= COST_LIMIT) continue;
+        const { id } = shaderSource(s);
+        const e = a.byId.get(id);
+        if (!e || tried.has(id) || e.id.includes(":")) continue;
+        if (!roundTrips(cfg, e.root)) continue;
+        const edit = editOf(e);
+        const f = foldAffine(edit.tree, { variables, functions }, fresh);
+        if (f.folded.length === 0) continue;
+        for (const h of f.added) hoistedNames.add(h.symbol);
+        const next: Edit = {
+          ...edit,
+          tree: f.root,
+          hoisted: [...edit.hoisted, ...f.added],
+          affine: [...edit.affine, ...f.folded],
+        };
+        if (!printsBack(next)) continue;
+        tried.set(id, next);
+      }
+      await keepBetter("fold", tried);
     }
 
     progress("distribute");
@@ -636,7 +686,8 @@ export async function grind(
             split: edit.split,
             gpu: edit.gpu,
             inlined: edit.inlined,
-            hoisted: edit.hoisted.length,
+            hoisted: edit.hoisted.filter((h) => !h.folded).length,
+            affine: edit.affine,
           }
         )
       );
@@ -673,6 +724,9 @@ export async function grind(
         .filter(([, e]) => e.inlined.length > 0)
         .map(([id]) => id),
       added: [...edits.values()].flatMap((e) => e.hoisted.map((h) => h.id)),
+      folded: [...edits]
+        .filter(([, e]) => e.affine.length > 0)
+        .map(([id]) => id),
       split: [...edits].filter(([, e]) => e.split > 0).map(([id]) => id),
       pushed: [...edits].filter(([, e]) => e.gpu.length > 0).map(([id]) => id),
       diffs,

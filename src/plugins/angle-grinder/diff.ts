@@ -35,6 +35,8 @@ export interface HotChanges {
   inlined: string[];
   /** Repeated parts moved into new definitions. */
   hoisted: number;
+  /** Definitions folded into per-element lists. */
+  affine: string[];
 }
 
 export interface ExpressionDiff extends HotChanges {
@@ -137,7 +139,13 @@ export function diffOf(
   used: Iterable<string>,
   values: ReadonlyMap<string, Value>,
   tree: Aug.Latex.AnyRootOrChild = root,
-  changes: HotChanges = { split: 0, gpu: [], inlined: [], hoisted: 0 }
+  changes: HotChanges = {
+    split: 0,
+    gpu: [],
+    inlined: [],
+    hoisted: 0,
+    affine: [],
+  }
 ): ExpressionDiff {
   const symbols = [...used].filter((s) => values.has(s));
   const name = (s: string) =>

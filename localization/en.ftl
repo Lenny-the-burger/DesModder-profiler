@@ -390,7 +390,7 @@ quake-pro-opt-scalarZoomed-desc = Combats perspective distortion by multiplying 
 ## Angle Grinder
 angle-grinder-name = Angle Grinder
 angle-grinder-desc = In 3D, rewrites the graph so Desmos compiles cheaper shaders that use fewer uniform slots. The result works without DesModder.
-angle-grinder-intro = Writes values that never change into the expressions behind shaders, so Desmos puts them in the shader source instead of using a uniform slot for each number. Values that do change are folded into fewer numbers where possible, and a shader that still runs out of slots computes them itself from the sliders. Every change is checked by compiling the result. The rewritten graph works without DesModder.
+angle-grinder-intro = Writes values that never change into the expressions behind shaders, so Desmos puts them in the shader source instead of using a uniform slot for each number. Values that do change are folded into fewer numbers where possible, and a shader that still runs out of slots computes them itself from the sliders. Shaders Desmos rejects as too complicated are made cheaper where possible. Every change is checked by compiling the result. The rewritten graph works without DesModder.
 angle-grinder-varying = What changes
 angle-grinder-varying-help = Checked sliders and draggable points keep working. Unchecked ones are fixed at their current value wherever a shader uses them.
 angle-grinder-freeze-still = Fix still ones
@@ -406,11 +406,14 @@ angle-grinder-step-evaluate = Evaluating values…
 angle-grinder-step-rewrite = Rewriting…
 angle-grinder-step-verify = Compiling the result…
 angle-grinder-step-inline = Writing out functions…
+angle-grinder-step-fold = Working out list values ahead of time…
 angle-grinder-step-distribute = Splitting products…
 angle-grinder-step-push = Moving work into shaders…
 angle-grinder-uniforms = Uniform slots, all shaders
 angle-grinder-at-limit = Shaders at the { $budget } slot limit
 angle-grinder-max-cost = Highest shader cost
+angle-grinder-over-cost = Shaders over the { $limit } cost limit
+angle-grinder-shader-cost = cost { $before } → { $after }
 angle-grinder-shader-color = Color of expression { $n }
 angle-grinder-shader-restriction = Expression { $n }
 angle-grinder-summary = Wrote { $values ->
@@ -424,6 +427,10 @@ angle-grinder-inline-summary = Wrote function calls and definitions out in { $co
     [one] 1 expression
    *[other] { $count } expressions
   }, so values they read more than once take uniform slots once.
+angle-grinder-fold-summary = Worked out values in lists ahead of time in { $count ->
+    [one] 1 expression
+   *[other] { $count } expressions
+  }: values that change linearly with position are computed once per element instead of for every pixel, so the shader costs less.
 angle-grinder-split-summary = Split products in { $count ->
     [one] 1 expression
    *[other] { $count } expressions
@@ -441,6 +448,7 @@ angle-grinder-diff-hoist = { $count ->
     [one] Moved a repeated part into a new definition, so it takes uniform slots once.
    *[other] Moved { $count } repeated parts into new definitions, so each takes uniform slots once.
   }
+angle-grinder-diff-fold = Works out { $names } once per element ahead of time, since they change linearly with position, instead of for every pixel.
 angle-grinder-diff-gpu = Computes what { $names } feed in the shader, instead of getting it in uniform slots.
 angle-grinder-skipped = { $count ->
     [one] 1 expression was left as it was, because rewriting it changed what it does.

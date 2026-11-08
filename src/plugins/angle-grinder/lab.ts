@@ -4,6 +4,7 @@
  */
 import type { GraphState } from "../../../graph-state";
 import type { Value } from "./rewrite";
+import { COST_LIMIT } from "./summary";
 
 interface Helper {
   numericValue?: number;
@@ -45,10 +46,14 @@ export interface ShaderStat {
 }
 
 export interface Measurement {
+  /** Every shader, including ones Desmos would reject for their cost. */
   shaders: ShaderStat[];
   /** Error message of each expression that has one, by id. */
   errors: Map<string, string>;
 }
+
+/** The end of the error message of a shader over the cost limit. */
+export const TOO_COSTLY = "is too complicated";
 
 const sleep = async (ms: number) =>
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -109,6 +114,10 @@ export class Lab {
    * read at the moment `state` was taken, and wait for Desmos to evaluate
    * and compile it. Each load gets a new calculator.
    *
+   * The calculator keeps shaders over the cost limit (Desmos's own
+   * `ignoreCostEstimate` option), so they can be measured and made cheaper;
+   * `measure` reports the error Desmos would show for them.
+   *
    * Only expressions in `draw` are drawn. Every calculator on the page shares
    * one evaluator worker, and meshing a heavy surface can keep it busy for
    * minutes, during which neither the lab nor the graph on screen gets
@@ -120,7 +129,7 @@ export class Lab {
     const { Desmos } = window as unknown as {
       Desmos: { Calculator3D: (el: HTMLElement, opts: object) => LabCalc };
     };
-    this.calc = Desmos.Calculator3D(this.el, {});
+    this.calc = Desmos.Calculator3D(this.el, { ignoreCostEstimate: true });
     this.calc.setState(stopped(state, draw));
     await this.settle(timeout);
   }
@@ -230,6 +239,12 @@ export class Lab {
     const errors = new Map<string, string>();
     for (const [id, a] of Object.entries(this.loaded.expressionAnalysis))
       if (a?.isError) errors.set(id, a.errorMessage ?? "error");
+    // What Desmos reports when it isn't told to ignore the cost.
+    for (const s of shaders)
+      if (s.cost > COST_LIMIT) {
+        const [part, id] = s.key.split(":");
+        if (!errors.has(id)) errors.set(id, `${part} ${TOO_COSTLY}`);
+      }
     return { shaders, errors };
   }
 }

@@ -2,7 +2,13 @@ import AngleGrinder, { SliderRow, Status } from ".";
 import { MarkedMath } from "./MarkedMath";
 import "./View.less";
 import type { ExpressionDiff, MarkedPart } from "./diff";
-import { ShaderChange, UNIFORM_BUDGET, shaderChanges, totals } from "./summary";
+import {
+  COST_LIMIT,
+  ShaderChange,
+  UNIFORM_BUDGET,
+  shaderChanges,
+  totals,
+} from "./summary";
 import { Component, jsx } from "#DCGView";
 import {
   Button,
@@ -154,6 +160,17 @@ class Changes extends Component<Props> {
                         </div>
                       )}
                     </If>
+                    <If predicate={() => d().affine.length > 0}>
+                      {() => (
+                        <div class="dsm-ag-diff-note">
+                          {() =>
+                            format("angle-grinder-diff-fold", {
+                              names: d().affine.join(", "),
+                            })
+                          }
+                        </div>
+                      )}
+                    </If>
                     <If predicate={() => d().split > 0}>
                       {() => (
                         <div class="dsm-ag-diff-note">
@@ -234,6 +251,20 @@ class Results extends Component<Props> {
             <td>→</td>
             <td class="dsm-ag-after">{() => after().atLimit}</td>
           </tr>
+          <If predicate={() => before().overCost > 0 || after().overCost > 0}>
+            {() => (
+              <tr>
+                <td>
+                  {() =>
+                    format("angle-grinder-over-cost", { limit: COST_LIMIT })
+                  }
+                </td>
+                <td>{() => before().overCost}</td>
+                <td>→</td>
+                <td class="dsm-ag-after">{() => after().overCost}</td>
+              </tr>
+            )}
+          </If>
           <tr>
             <td>{format("angle-grinder-max-cost")}</td>
             <td>{() => before().maxCost}</td>
@@ -267,6 +298,23 @@ class Results extends Component<Props> {
                     `${c().before?.uniforms ?? "–"} → ${c().after?.uniforms ?? "–"}`
                   }
                 </span>
+                <If
+                  predicate={() =>
+                    (c().before?.cost ?? 0) > COST_LIMIT ||
+                    (c().after?.cost ?? 0) > COST_LIMIT
+                  }
+                >
+                  {() => (
+                    <span class="dsm-ag-shader-cost">
+                      {() =>
+                        format("angle-grinder-shader-cost", {
+                          before: c().before?.cost ?? "–",
+                          after: c().after?.cost ?? "–",
+                        })
+                      }
+                    </span>
+                  )}
+                </If>
               </div>
             )}
           </For>
@@ -291,6 +339,17 @@ class Results extends Component<Props> {
               {() =>
                 format("angle-grinder-inline-summary", {
                   count: result().inlinedInto.length,
+                })
+              }
+            </div>
+          )}
+        </If>
+        <If predicate={() => result().folded.length > 0}>
+          {() => (
+            <div class="dsm-ag-note">
+              {() =>
+                format("angle-grinder-fold-summary", {
+                  count: result().folded.length,
                 })
               }
             </div>

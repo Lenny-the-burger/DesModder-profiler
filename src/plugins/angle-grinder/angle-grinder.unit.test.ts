@@ -19,6 +19,7 @@ import {
 import { diffOf, shortNumber } from "./diff";
 import { Kind, Names, distribute, kindOf, pushToGpu } from "./hot";
 import { Definitions, hoistRepeats, inlineDefinitions } from "./inline";
+import { foldAffine } from "./affine";
 import type { GraphState } from "../../../graph-state";
 import "../../tests/run_calc_for_tests";
 
@@ -438,6 +439,75 @@ describe("writing out and hoisting", () => {
     expect(
       hoist(r`c=\left(\min(x-2H)+\min(y-2H)\right)\operatorname{with}T=1`)
         .hoisted
+    ).toEqual([]);
+  });
+});
+
+describe("folding affine values out of comprehensions", () => {
+  const r = String.raw;
+  const variables = new Map(
+    [
+      r`p=(x,y,z)`,
+      r`c_{v}=\left(p-P\right)\left[n\right]`,
+      r`d_{20}=c_{v}\cdot A\left[n\right]`,
+      r`b_{V}=\frac{d_{20}D\left[n\right]}{E\left[n\right]}`,
+      r`b_{W}=c_{v}\cdot B\left[n\right]`,
+      r`b_{U}=1-b_{V}-b_{W}`,
+      r`s=\sin(x)n`,
+    ].map((l) => {
+      const d = parseRootLatex(cfg, l);
+      if (d.type !== "Assignment") throw new Error("not a definition");
+      return [d.left.symbol, d.right] as const;
+    })
+  );
+  const fold = (latex: string) => {
+    let i = 0;
+    const out = foldAffine(
+      parseRootLatex(cfg, latex),
+      { variables, functions: new Map() },
+      () => ({ id: `n${++i}`, symbol: `G_rind${i}` })
+    );
+    return { ...out, latex: printLatex(cfg, out.root) };
+  };
+  test("folds affine values, looking through cheap sums", () => {
+    const f = fold(
+      r`c=\left[\min(b_{U},b_{V},b_{W})\operatorname{for}n=\left[1...80\right]\right]`
+    );
+    expect(f.folded).toEqual(["b_V", "b_W"]);
+    // G_0, then G_x, G_y, G_z for each.
+    expect(f.added).toHaveLength(8);
+    expect(roundTrips(cfg, f.root)).toBe(true);
+    for (const h of f.added)
+      expect(
+        roundTrips(cfg, {
+          type: "Assignment",
+          left: { type: "Identifier", symbol: h.symbol },
+          right: h.node,
+        })
+      ).toBe(true);
+    expect(f.latex).toContain(
+      r`\operatorname{with}b_{V}=x\cdot G_{rind2}\left[n\right]+y\cdot G_{rind3}\left[n\right]+z\cdot G_{rind4}\left[n\right]+G_{rind1}\left[n\right]`
+    );
+    expect(printLatex(cfg, f.added[1].node)).toBe(
+      r`\left[b_{V}\operatorname{with}x=1,y=0,z=0\operatorname{for}n=\left[1...80\right]\right]-G_{rind1}`
+    );
+  });
+  test("leaves non-affine values, other lists and withs alone", () => {
+    expect(
+      fold(r`c=\left[s\operatorname{for}n=\left[1...80\right]\right]`).folded
+    ).toEqual([]);
+    expect(
+      fold(r`c=\left[b_{V}\operatorname{for}n=\left[2...80\right]\right]`)
+        .folded
+    ).toEqual([]);
+    expect(
+      fold(r`c=\left[b_{V}\operatorname{for}n=\left[1...200\right]\right]`)
+        .folded
+    ).toEqual([]);
+    expect(
+      fold(
+        r`c=\left[b_{V}\operatorname{for}n=\left[1...80\right]\right]\operatorname{with}T=1`
+      ).folded
     ).toEqual([]);
   });
 });

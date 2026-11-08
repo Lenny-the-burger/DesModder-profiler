@@ -184,6 +184,8 @@ export interface Hoisted {
   id: string;
   symbol: string;
   node: Child;
+  /** Part of a value folded out of a comprehension, not a repeat. */
+  folded?: boolean;
 }
 
 /** Nodes that can be a definition's right side. */
