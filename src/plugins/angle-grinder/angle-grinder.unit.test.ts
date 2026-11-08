@@ -464,6 +464,7 @@ describe("folding affine values out of comprehensions", () => {
     let i = 0;
     const out = foldAffine(
       parseRootLatex(cfg, latex),
+      latex.startsWith("c=") ? "color" : "restriction",
       { variables, functions: new Map() },
       () => ({ id: `n${++i}`, symbol: `G_rind${i}` })
     );
@@ -490,6 +491,21 @@ describe("folding affine values out of comprehensions", () => {
     );
     expect(printLatex(cfg, f.added[1].node)).toBe(
       r`\left[b_{V}\operatorname{with}x=1,y=0,z=0\operatorname{for}n=\left[1...80\right]\right]-G_{rind1}`
+    );
+  });
+  test("folds whole lists when the shader broadcasts over them", () => {
+    const f = fold(r`c=\min(b_{U},b_{V},b_{W})`);
+    expect(f.folded).toEqual(["b_V", "b_W"]);
+    expect(f.latex).toBe(
+      r`c=\operatorname{min}\left(b_{U},b_{V},b_{W}\right)\operatorname{with}b_{V}=x\cdot G_{rind2}+y\cdot G_{rind3}+z\cdot G_{rind4}+G_{rind1},b_{W}=x\cdot G_{rind6}+y\cdot G_{rind7}+z\cdot G_{rind8}+G_{rind5}`
+    );
+    expect(printLatex(cfg, f.added[1].node)).toBe(
+      r`\left(b_{V}\operatorname{with}x=1,y=0,z=0\right)-G_{rind1}`
+    );
+    expect(roundTrips(cfg, f.root)).toBe(true);
+    // Each side of an inequality.
+    expect(fold(r`z<b_{V}`).latex).toBe(
+      r`z<\left(b_{V}\operatorname{with}b_{V}=x\cdot G_{rind2}+y\cdot G_{rind3}+z\cdot G_{rind4}+G_{rind1}\right)`
     );
   });
   test("leaves non-affine values, other lists and withs alone", () => {

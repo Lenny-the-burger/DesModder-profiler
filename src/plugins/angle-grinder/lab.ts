@@ -18,6 +18,14 @@ interface Shader {
   costEstimate: number;
 }
 
+/** A uniform limit no shader reaches. */
+const UNLIMITED_UNIFORMS = 1e7;
+
+interface Grapher3D {
+  maxFragmentUniformComponents?: number;
+  getMaxFragmentUniformComponents: () => number;
+}
+
 interface LabCalc {
   setState: (state: GraphState) => void;
   getState: () => GraphState;
@@ -29,6 +37,7 @@ interface LabCalc {
   >;
   controller: {
     getAllShaders: () => Record<string, Shader | undefined>;
+    getGrapher3d?: () => Grapher3D | undefined;
     grapher3d?: {
       graphSketches?: Record<
         string,
@@ -116,7 +125,8 @@ export class Lab {
    *
    * The calculator keeps shaders over the cost limit (Desmos's own
    * `ignoreCostEstimate` option), so they can be measured and made cheaper;
-   * `measure` reports the error Desmos would show for them.
+   * `measure` reports the error Desmos would show for them. It also counts
+   * every uniform slot a shader asks for, past the 427 Desmos gives it.
    *
    * Only expressions in `draw` are drawn. Every calculator on the page shares
    * one evaluator worker, and meshing a heavy surface can keep it busy for
@@ -130,6 +140,15 @@ export class Lab {
       Desmos: { Calculator3D: (el: HTMLElement, opts: object) => LabCalc };
     };
     this.calc = Desmos.Calculator3D(this.el, { ignoreCostEstimate: true });
+    // Desmos gives a shader at most 427 slots and writes the rest into its
+    // source, so its uniform list stops at 427. With the limit raised (the
+    // worker reads it from the grapher), the list has every slot the shader
+    // asks for. The lab never draws, so no program is built from it.
+    const grapher = this.calc.controller.getGrapher3d?.();
+    if (grapher) {
+      grapher.maxFragmentUniformComponents = UNLIMITED_UNIFORMS;
+      grapher.getMaxFragmentUniformComponents = () => UNLIMITED_UNIFORMS;
+    }
     this.calc.setState(stopped(state, draw));
     await this.settle(timeout);
   }

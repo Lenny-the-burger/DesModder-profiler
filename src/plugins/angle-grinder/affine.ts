@@ -1,5 +1,5 @@
 /**
- * Folding work that is affine in the pixel out of list comprehensions.
+ * Folding work that is affine in the pixel out of shaders.
  *
  * In `[B for n=[1...N]]`, a shader computes `B` for every element and every
  * pixel. When something `B` reads is affine in the coordinates, like a
@@ -17,7 +17,7 @@
  * is for shaders over the cost limit.
  */
 import type { Aug } from "../../../text-mode-core";
-import { PIXEL_NAMES, containsWith } from "./hot";
+import { PIXEL_NAMES, ShaderPart, containsWith, withAround } from "./hot";
 import type { Hoisted } from "./inline";
 import { bindingsOf, mapChildren } from "./rewrite";
 
@@ -225,12 +225,113 @@ function boundIn(n: Node, out = new Set<string>()) {
 export type Fresh = () => { id: string; symbol: string };
 
 /**
- * Fold the affine values each `[B for n=[1...N]]` in `root` reads into
- * per-element lists. `folded` names what was folded; `added` are the new
- * definitions.
+ * Definitions `body` reads to fold, outermost first: an affine one that isn't
+ * cheap is folded, anything else is looked into. Comprehensions are skipped
+ * when `skipComprehensions`, since names in them can depend on its variable.
+ */
+function chooseFolds(
+  body: Node,
+  a: Analysis,
+  defs: GraphDefinitions,
+  skip: ReadonlySet<string>,
+  skipComprehensions: boolean
+): string[] {
+  const chosen: string[] = [];
+  const seen = new Set<string>(skip);
+  const look = (m: Node, bound: ReadonlySet<string>) => {
+    if (skipComprehensions && m.type === "ListComprehension") return;
+    if (m.type === "Identifier" && !bound.has(m.symbol)) {
+      const s = m.symbol;
+      const right = defs.variables.get(s);
+      if (!right || seen.has(s)) return;
+      seen.add(s);
+      const k = a.ofName(s);
+      if (k === Dep.None) return;
+      if (k === Dep.Affine && !cheap(right)) {
+        chosen.push(s);
+        return;
+      }
+      look(right, new Set());
+      return;
+    }
+    if (m.type === "FunctionCall" && !bound.has(m.callee.symbol)) {
+      const f = defs.functions.get(m.callee.symbol);
+      if (f && !seen.has(m.callee.symbol)) {
+        seen.add(m.callee.symbol);
+        look(f.definition, new Set(f.argSymbols.map((p) => p.symbol)));
+      }
+    }
+    mapChildren(m, bound, (c, b) => {
+      look(c, b);
+      return c;
+    });
+  };
+  look(body, new Set());
+  return chosen;
+}
+
+/**
+ * For each of `chosen`, the assignment `s = x·G_x + y·G_y + … + G_0` and the
+ * definitions of the `G`s, which are `wrap`ped (in the comprehension) and
+ * read through `at` (indexed by its variable).
+ */
+function foldsOf(
+  chosen: string[],
+  a: Analysis,
+  fresh: Fresh,
+  wrap: (body: Child) => Child,
+  at: (symbol: string) => Child
+) {
+  const assignments: Aug.Latex.AssignmentExpression[] = [];
+  const added: Hoisted[] = [];
+  const folded: string[] = [];
+  for (const s of chosen) {
+    const used = [...a.coordsIn(id(s))].sort();
+    if (used.length === 0) continue;
+    const withCoords = (one?: string): Child => ({
+      type: "Substitution",
+      body: id(s),
+      assignments: used.map((c) => ({
+        type: "AssignmentExpression",
+        variable: id(c),
+        expression: num(c === one ? 1 : 0),
+      })),
+    });
+    const g0 = fresh();
+    added.push({ ...g0, node: wrap(withCoords()), folded: true });
+    // Built the way the parser builds a sum.
+    let form: Child | undefined;
+    for (const c of used) {
+      const g = fresh();
+      added.push({
+        ...g,
+        node: bin("Subtract", wrap(withCoords(c)), id(g0.symbol)),
+        folded: true,
+      });
+      const term = bin("Multiply", id(c), at(g.symbol));
+      form = form ? bin("Add", form, term) : term;
+    }
+    form = bin("Add", form!, at(g0.symbol));
+    assignments.push({
+      type: "AssignmentExpression",
+      variable: id(s),
+      expression: form,
+    });
+    folded.push(s);
+  }
+  return { assignments, added, folded };
+}
+
+/**
+ * Fold the affine values `root`'s shader reads into lists computed on the
+ * CPU: inside each `[B for n=[1...N]]`, per element, and if there are none of
+ * those to fold, for the whole shader (where they are lists when the graph
+ * broadcasts over lists). `part` is the part of `root` the shader computes.
+ * `folded` names what was folded; `added` are the new definitions.
  */
 export function foldAffine<T extends Node>(
   root: T,
+  part: ShaderPart,
   defs: GraphDefinitions,
   fresh: Fresh
 ): { root: T; folded: string[]; added: Hoisted[] } {
@@ -241,6 +342,9 @@ export function foldAffine<T extends Node>(
   );
   const folded: string[] = [];
   const added: Hoisted[] = [];
+  // The folded values are rebound with a `with`, which can't go inside
+  // another.
+  if (containsWith(root)) return { root, folded, added };
 
   const comprehension = (
     n: Aug.Latex.ListComprehension
@@ -249,97 +353,35 @@ export function foldAffine<T extends Node>(
       return undefined;
     const [{ variable, expression: list }] = n.assignments;
     if (oneTo(list) === undefined) return undefined;
-    if (containsWith(n.expr)) return undefined;
-    const a = new Analysis(defs, coords, new Set([variable.symbol]));
     const local = boundIn(n.expr);
     if (local.has(variable.symbol)) return undefined;
-
-    // Definitions `B` reads to fold, outermost first: an affine one that
-    // isn't cheap is folded, anything else is looked into.
-    const chosen: string[] = [];
-    const seen = new Set<string>();
-    const look = (m: Node, bound: ReadonlySet<string>) => {
-      if (m.type === "Identifier" && !bound.has(m.symbol)) {
-        const s = m.symbol;
-        const right = defs.variables.get(s);
-        if (!right || seen.has(s) || s === variable.symbol) return;
-        seen.add(s);
-        const k = a.ofName(s);
-        if (k === Dep.None) return;
-        if (k === Dep.Affine && !cheap(right)) {
-          chosen.push(s);
-          return;
-        }
-        look(right, new Set());
-        return;
-      }
-      if (m.type === "FunctionCall" && !bound.has(m.callee.symbol)) {
-        const f = defs.functions.get(m.callee.symbol);
-        if (f && !seen.has(m.callee.symbol)) {
-          seen.add(m.callee.symbol);
-          look(f.definition, new Set(f.argSymbols.map((p) => p.symbol)));
-        }
-      }
-      mapChildren(m, bound, (c, b) => {
-        look(c, b);
-        return c;
-      });
-    };
-    look(n.expr, new Set());
-    if (chosen.length === 0) return undefined;
-
-    const forN = (body: Child): Child => ({
-      type: "ListComprehension",
-      expr: body,
-      assignments: [{ ...n.assignments[0] }],
-      bracketWrapped: true,
-      parameters: [],
-    });
-    const at = (s: string): Child => ({
-      type: "ListAccess",
-      list: id(s),
-      index: id(variable.symbol),
-    });
-    const assignments: Aug.Latex.AssignmentExpression[] = [];
-    for (const s of chosen) {
-      const used = [...a.coordsIn(id(s))].sort();
-      if (used.length === 0) continue;
-      const withCoords = (one?: string): Child => ({
-        type: "Substitution",
-        body: id(s),
-        assignments: used.map((c) => ({
-          type: "AssignmentExpression",
-          variable: id(c),
-          expression: num(c === one ? 1 : 0),
-        })),
-      });
-      const g0 = fresh();
-      added.push({ ...g0, node: forN(withCoords()), folded: true });
-      // `x·G_x[n] + y·G_y[n] + … + G_0[n]`, built the way the parser
-      // builds a sum.
-      let form: Child | undefined;
-      for (const c of used) {
-        const g = fresh();
-        added.push({
-          ...g,
-          node: bin("Subtract", forN(withCoords(c)), id(g0.symbol)),
-          folded: true,
-        });
-        const term = bin("Multiply", id(c), at(g.symbol));
-        form = form ? bin("Add", form, term) : term;
-      }
-      form = bin("Add", form!, at(g0.symbol));
-      assignments.push({
-        type: "AssignmentExpression",
-        variable: id(s),
-        expression: form,
-      });
-      folded.push(s);
-    }
-    if (assignments.length === 0) return undefined;
+    const a = new Analysis(defs, coords, new Set([variable.symbol]));
+    const chosen = chooseFolds(
+      n.expr,
+      a,
+      defs,
+      new Set([variable.symbol]),
+      false
+    );
+    const f = foldsOf(
+      chosen,
+      a,
+      fresh,
+      (body) => ({
+        type: "ListComprehension",
+        expr: body,
+        assignments: [{ ...n.assignments[0] }],
+        bracketWrapped: true,
+        parameters: [],
+      }),
+      (s) => ({ type: "ListAccess", list: id(s), index: id(variable.symbol) })
+    );
+    if (f.assignments.length === 0) return undefined;
+    added.push(...f.added);
+    folded.push(...f.folded);
     return {
       ...n,
-      expr: { type: "Substitution", body: n.expr, assignments },
+      expr: { type: "Substitution", body: n.expr, assignments: f.assignments },
     };
   };
 
@@ -350,9 +392,21 @@ export function foldAffine<T extends Node>(
     }
     return mapChildren(m, bound, (c, b) => go(c, b) as Child);
   };
-  // The folded values are rebound with a `with`, which can't go inside
-  // another.
-  if (containsWith(root)) return { root, folded, added };
   const out = go(root, new Set()) as T;
-  return { root: out, folded, added };
+  if (folded.length > 0) return { root: out, folded, added };
+
+  // Nothing in comprehensions: fold for the whole shader.
+  const a = new Analysis(defs, coords, new Set());
+  const body = root.type === "Assignment" ? root.right : root;
+  const f = foldsOf(
+    chooseFolds(body, a, defs, new Set(), true),
+    a,
+    fresh,
+    (b) => b,
+    id
+  );
+  if (f.assignments.length === 0) return { root, folded, added };
+  const placed = withAround(root, part, f.assignments);
+  if (!placed) return { root, folded, added };
+  return { root: placed, folded: f.folded, added: f.added };
 }

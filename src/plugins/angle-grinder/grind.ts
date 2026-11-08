@@ -169,7 +169,8 @@ const hoistedDef = (h: Hoisted): Aug.Latex.Assignment => ({
 /** Shader stats by key. */
 const byKey = (m: Measurement) => new Map(m.shaders.map((s) => [s.key, s]));
 
-const atCap = (s: ShaderStat) => s.uniforms >= UNIFORM_BUDGET;
+/** Asks for more slots than Desmos gives it, so the rest are written in. */
+const atCap = (s: ShaderStat) => s.uniforms > UNIFORM_BUDGET;
 
 /** How an expression is rewritten. */
 interface Edit {
@@ -453,12 +454,12 @@ export async function grind(
       const tried = new Map<string, Edit>();
       for (const s of after.shaders) {
         if (s.cost <= COST_LIMIT) continue;
-        const { id } = shaderSource(s);
+        const { id, part } = shaderSource(s);
         const e = a.byId.get(id);
         if (!e || tried.has(id) || e.id.includes(":")) continue;
         if (!roundTrips(cfg, e.root)) continue;
         const edit = editOf(e);
-        const f = foldAffine(edit.tree, { variables, functions }, fresh);
+        const f = foldAffine(edit.tree, part, { variables, functions }, fresh);
         if (f.folded.length === 0) continue;
         for (const h of f.added) hoistedNames.add(h.symbol);
         const next: Edit = {

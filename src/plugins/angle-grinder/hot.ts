@@ -286,6 +286,20 @@ export function pushToGpu<T extends Node>(
     variable: { type: "Identifier", symbol: s },
     expression: plusZero(s, v, w),
   }));
+  return withAround(root, part, push);
+}
+
+/**
+ * `with` the assignments in `push` around the part of `root` that a shader
+ * computes: for a color, the definition's right side; for restrictions and
+ * inequalities, each side of each comparison. Undefined if there's no place
+ * for it.
+ */
+export function withAround<T extends Node>(
+  root: T,
+  part: ShaderPart,
+  push: Aug.Latex.AssignmentExpression[]
+): T | undefined {
   if (part === "color") {
     if (root.type !== "Assignment") return undefined;
     const right = withPushed(root.right, push);
