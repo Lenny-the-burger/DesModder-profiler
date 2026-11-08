@@ -132,6 +132,28 @@ class Changes extends Component<Props> {
                         })
                       }
                     </div>
+                    <If predicate={() => d().inlined.length > 0}>
+                      {() => (
+                        <div class="dsm-ag-diff-note">
+                          {() =>
+                            format("angle-grinder-diff-inline", {
+                              names: d().inlined.join(", "),
+                            })
+                          }
+                        </div>
+                      )}
+                    </If>
+                    <If predicate={() => d().hoisted > 0}>
+                      {() => (
+                        <div class="dsm-ag-diff-note">
+                          {() =>
+                            format("angle-grinder-diff-hoist", {
+                              count: d().hoisted,
+                            })
+                          }
+                        </div>
+                      )}
+                    </If>
                     <If predicate={() => d().split > 0}>
                       {() => (
                         <div class="dsm-ag-diff-note">
@@ -258,6 +280,17 @@ class Results extends Component<Props> {
                   expressions: result().diffs.filter(
                     (d) => d.before.parts.length > 0
                   ).length,
+                })
+              }
+            </div>
+          )}
+        </If>
+        <If predicate={() => result().inlinedInto.length > 0}>
+          {() => (
+            <div class="dsm-ag-note">
+              {() =>
+                format("angle-grinder-inline-summary", {
+                  count: result().inlinedInto.length,
                 })
               }
             </div>

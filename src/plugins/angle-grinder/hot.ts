@@ -89,7 +89,7 @@ export function kindOf(
 }
 
 /** Names Desmos draws over; see analyze.ts. */
-const PIXEL_NAMES = new Set([
+export const PIXEL_NAMES = new Set([
   "x",
   "y",
   "z",
@@ -210,7 +210,7 @@ export function distribute<T extends Node>(
   return { root: go(root, new Set()) as T, count };
 }
 
-function containsWith(n: Node): boolean {
+export function containsWith(n: Node): boolean {
   if (n.type === "Substitution") return true;
   let found = false;
   mapChildren(n, new Set(), (c) => {

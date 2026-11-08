@@ -3,14 +3,17 @@
  * it draws the same. The result is plain graph state that works without
  * DesModder.
  *
- * Three passes, each measured by compiling the result in an offscreen
+ * Four passes, each measured by compiling the result in an offscreen
  * calculator:
  *
  * 1. Values that don't change are typed into the expressions that end up in
  *    shaders, so the shader gets them as literals instead of uniform slots.
- * 2. Products of a changing value and a sum are split when that folds the
+ * 2. Function calls and definitions are written out into the expressions
+ *    shaders come from, and repeated parts moved into new definitions, so
+ *    values read more than once share slots (see inline.ts).
+ * 3. Products of a changing value and a sum are split when that folds the
  *    changing part into fewer numbers (see `distribute`).
- * 3. Shaders still out of uniform slots compute what they need from the
+ * 4. Shaders still out of uniform slots compute what they need from the
  *    sliders themselves, if that stays under the cost limit (see `pushToGpu`).
  */
 import type { GraphState } from "../../../graph-state";
@@ -29,6 +32,7 @@ import {
 } from "./analyze";
 import { ExpressionDiff, diffOf } from "./diff";
 import { Names, ShaderPart, distribute, pushToGpu } from "./hot";
+import { Hoisted, hoistRepeats, inlineDefinitions } from "./inline";
 import { Lab, Measurement, ShaderStat } from "./lab";
 import {
   Value,
@@ -74,6 +78,10 @@ export interface GrindResult {
   inlined: string[];
   /** Expressions that changed. */
   rewritten: string[];
+  /** Expressions with function calls or definitions written out. */
+  inlinedInto: string[];
+  /** Definitions added for parts that were written more than once. */
+  added: string[];
   /** Expressions with products split. */
   split: string[];
   /** Expressions that compute changing values in the shader. */
@@ -119,11 +127,24 @@ function newErrorsOf(before: Measurement, after: Measurement) {
   return out;
 }
 
+/** `state` with expressions' latex replaced, and new ones added. */
 function withLatex(state: GraphState, latex: ReadonlyMap<string, string>) {
   const copy: GraphState = JSON.parse(JSON.stringify(state));
+  const seen = new Set<string>();
   for (const item of copy.expressions.list)
-    if (item.type === "expression" && latex.has(item.id))
+    if (item.type === "expression" && latex.has(item.id)) {
       item.latex = latex.get(item.id)!;
+      seen.add(item.id);
+    }
+  for (const [id, l] of latex)
+    if (!seen.has(id))
+      // Hidden: a list of points would otherwise be drawn.
+      copy.expressions.list.push({
+        type: "expression",
+        id,
+        latex: l,
+        hidden: true,
+      });
   return copy;
 }
 
@@ -132,6 +153,13 @@ function shaderSource(s: ShaderStat): { id: string; part: ShaderPart } {
   const [part, id] = s.key.split(":") as [ShaderPart, string];
   return { id, part };
 }
+
+/** The definition a hoisted part becomes. */
+const hoistedDef = (h: Hoisted): Aug.Latex.Assignment => ({
+  type: "Assignment",
+  left: { type: "Identifier", symbol: h.symbol },
+  right: h.node,
+});
 
 /** Shader stats by key. */
 const byKey = (m: Measurement) => new Map(m.shaders.map((s) => [s.key, s]));
@@ -144,9 +172,22 @@ interface Edit {
   tree: Node;
   /** Whether values are typed in. */
   typeIn: boolean;
+  /** Functions and definitions written out. */
+  inlined: string[];
+  /** New definitions for parts written more than once. */
+  hoisted: Hoisted[];
   split: number;
   gpu: string[];
 }
+
+const unchanged = (tree: Node): Edit => ({
+  tree,
+  typeIn: false,
+  inlined: [],
+  hoisted: [],
+  split: 0,
+  gpu: [],
+});
 
 export async function grind(
   cfg: Config,
@@ -196,12 +237,19 @@ export async function grind(
       usedBy.set(id, used);
       return out;
     };
-    /** Latex of every edited expression. */
+    /** Latex of every edited expression, and of the definitions added. */
     const allLatex = (extra?: ReadonlyMap<string, Edit>) => {
+      const all = new Map(edits);
+      for (const [id, e] of extra ?? []) all.set(id, e);
       const out = new Map<string, string>();
-      for (const [id, e] of edits)
-        if (!extra?.has(id)) out.set(id, print(id, e));
-      for (const [id, e] of extra ?? []) out.set(id, print(id, e));
+      for (const [id, e] of all) {
+        out.set(id, print(id, e));
+        for (const h of e.hoisted)
+          out.set(
+            h.id,
+            printLatex(cfg, substitute(hoistedDef(h), literals, new Set()))
+          );
+      }
       return out;
     };
 
@@ -216,7 +264,7 @@ export async function grind(
         skipped.push({ id: e.id, reason: "round-trip" });
         continue;
       }
-      edits.set(e.id, { tree: e.root, typeIn: true, split: 0, gpu: [] });
+      edits.set(e.id, { ...unchanged(e.root), typeIn: true });
     }
 
     progress("verify");
@@ -251,13 +299,129 @@ export async function grind(
       if (!c) closureOf.set(id, (c = new Set([id, ...readsFrom(a, id)])));
       return c;
     };
+    /** Names added for hoisted parts, which are like the constants. */
+    const hoistedNames = new Set<string>();
     const namesFor = (edit: Edit | undefined): Names => ({
-      constants,
+      constants: new Set([...constants, ...hoistedNames]),
       typedIn: edit?.typeIn ? typedInNames : new Set(),
-      defined: new Set(a.definitions.keys()),
+      defined: new Set([...a.definitions.keys(), ...hoistedNames]),
     });
-    const editOf = (e: ExprInfo): Edit =>
-      edits.get(e.id) ?? { tree: e.root, typeIn: false, split: 0, gpu: [] };
+    const editOf = (e: ExprInfo): Edit => edits.get(e.id) ?? unchanged(e.root);
+
+    // Names for new definitions, unused anywhere in the graph.
+    const taken = new Set<string>(a.definitions.keys());
+    for (const e of a.exprs) for (const d of e.deps) taken.add(d);
+    let freshCount = 0;
+    const fresh = () => {
+      let symbol: string;
+      do symbol = `G_rind${++freshCount}`;
+      while (taken.has(symbol));
+      taken.add(symbol);
+      return { id: `dsm-ag-${freshCount}`, symbol };
+    };
+    /** `edit` with repeated parts moved out, if there are any. */
+    const hoist = (edit: Edit): Edit => {
+      const h = hoistRepeats(edit.tree, namesFor(edit), fresh);
+      if (h.hoisted.length === 0) return edit;
+      for (const x of h.hoisted) hoistedNames.add(x.symbol);
+      return {
+        ...edit,
+        tree: h.root,
+        hoisted: [...edit.hoisted, ...h.hoisted],
+      };
+    };
+    /** Whether an edit prints and reads back as built. */
+    const printsBack = (edit: Edit) =>
+      roundTrips(
+        cfg,
+        edit.typeIn ? substitute(edit.tree, literals, new Set()) : edit.tree
+      ) && edit.hoisted.every((h) => roundTrips(cfg, hoistedDef(h)));
+
+    /**
+     * Measure `tried` together, and keep the edits that made some shader
+     * reading them better and none worse. Taking more cost counts as worse,
+     * unless it got a shader out of uniform slots and under the cost limit.
+     */
+    const keepBetter = async (label: string, tried: Map<string, Edit>) => {
+      if (tried.size === 0) return;
+      const m = await measure(withLatex(state, allLatex(tried)));
+      trials.push(`${label} ${[...tried.keys()].join(",")}`);
+      const errs = newErrorsOf(before, m);
+      const was = byKey(after);
+      const now = byKey(m);
+      const keep = new Map<string, Edit>();
+      for (const [id, edit] of tried) {
+        if (errs.has(id)) continue;
+        let better = false;
+        let worse = false;
+        for (const [key, s] of was) {
+          if (!closure(shaderSource(s).id).has(id)) continue;
+          const n = now.get(key);
+          if (!n || errs.has(shaderSource(s).id)) {
+            worse = true;
+            continue;
+          }
+          if (n.uniforms > s.uniforms) worse = true;
+          else if (
+            n.cost > s.cost &&
+            !(atCap(s) && !atCap(n) && n.cost <= COST_LIMIT)
+          )
+            worse = true;
+          if (n.uniforms < s.uniforms || n.cost < s.cost) better = true;
+        }
+        if (better && !worse) keep.set(id, edit);
+      }
+      if (keep.size > 0) {
+        const snapshot = new Map(edits);
+        for (const [id, edit] of keep) edits.set(id, edit);
+        const m2 =
+          keep.size === tried.size
+            ? m
+            : await measure(withLatex(state, allLatex()));
+        if (newErrorsOf(before, m2).size > newErrors.size) {
+          // The kept edits fail together; keep none of them.
+          edits.clear();
+          for (const [id, edit] of snapshot) edits.set(id, edit);
+        } else after = m2;
+      }
+    };
+
+    progress("inline");
+    {
+      const functions = new Map<string, Aug.Latex.FunctionDefinition>();
+      for (const e of a.definitions.values())
+        if (e.isFunction && e.root.type === "FunctionDefinition")
+          functions.set(e.defines!, e.root);
+      const perPixel = new Map<string, Aug.Latex.AnyChild>();
+      for (const e of targets)
+        if (
+          e.defines &&
+          !e.isFunction &&
+          !e.isSlider &&
+          !e.id.includes(":") &&
+          e.root.type === "Assignment" &&
+          a.definitions.get(e.defines) === e
+        )
+          perPixel.set(e.defines, e.root.right);
+      const tried = new Map<string, Edit>();
+      for (const id of new Set(after.shaders.map((s) => shaderSource(s).id))) {
+        const e = a.byId.get(id);
+        if (!e || e.id.includes(":") || !roundTrips(cfg, e.root)) continue;
+        const edit = editOf(e);
+        const inl = inlineDefinitions(edit.tree, { functions, perPixel });
+        const next = hoist({
+          ...edit,
+          tree: inl.root,
+          // What was written out may read values typed in where it was.
+          typeIn: true,
+          inlined: [...edit.inlined, ...inl.inlined],
+        });
+        if (inl.inlined.length === 0 && next.hoisted === edit.hoisted) continue;
+        if (!printsBack(next)) continue;
+        tried.set(id, next);
+      }
+      await keepBetter("inline", tried);
+    }
 
     progress("distribute");
     {
@@ -267,56 +431,16 @@ export async function grind(
         const edit = editOf(e);
         const d = distribute(edit.tree, namesFor(edit));
         if (d.count === 0) continue;
-        const next = { ...edit, tree: d.root, split: edit.split + d.count };
-        // The split tree has to print and read back as built.
-        const printed = edit.typeIn
-          ? substitute(d.root, literals, new Set())
-          : d.root;
-        if (!roundTrips(cfg, printed)) continue;
+        // Split products can repeat a changing part.
+        const next = hoist({
+          ...edit,
+          tree: d.root,
+          split: edit.split + d.count,
+        });
+        if (!printsBack(next)) continue;
         tried.set(e.id, next);
       }
-      if (tried.size > 0) {
-        const m = await measure(withLatex(state, allLatex(tried)));
-        trials.push(`distribute ${[...tried.keys()].join(",")}`);
-        const errs = newErrorsOf(before, m);
-        const was = byKey(after);
-        const now = byKey(m);
-        const keep = new Map<string, Edit>();
-        for (const [id, edit] of tried) {
-          if (errs.has(id)) continue;
-          let better = false;
-          let worse = false;
-          for (const [key, s] of was) {
-            if (!closure(shaderSource(s).id).has(id)) continue;
-            const n = now.get(key);
-            if (!n || errs.has(shaderSource(s).id)) {
-              worse = true;
-              continue;
-            }
-            if (n.uniforms > s.uniforms) worse = true;
-            else if (
-              n.cost > s.cost &&
-              !(atCap(s) && !atCap(n) && n.cost <= COST_LIMIT)
-            )
-              worse = true;
-            if (n.uniforms < s.uniforms || n.cost < s.cost) better = true;
-          }
-          if (better && !worse) keep.set(id, edit);
-        }
-        if (keep.size > 0) {
-          const snapshot = new Map(edits);
-          for (const [id, edit] of keep) edits.set(id, edit);
-          const m2 =
-            keep.size === tried.size
-              ? m
-              : await measure(withLatex(state, allLatex()));
-          if (newErrorsOf(before, m2).size > newErrors.size) {
-            // The kept splits fail together; keep none of them.
-            edits.clear();
-            for (const [id, edit] of snapshot) edits.set(id, edit);
-          } else after = m2;
-        }
-      }
+      await keepBetter("distribute", tried);
     }
 
     progress("push");
@@ -508,7 +632,12 @@ export async function grind(
           edit.typeIn ? (usedBy.get(e.id) ?? []) : [],
           values,
           edit.tree,
-          { split: edit.split, gpu: edit.gpu }
+          {
+            split: edit.split,
+            gpu: edit.gpu,
+            inlined: edit.inlined,
+            hoisted: edit.hoisted.length,
+          }
         )
       );
     }
@@ -540,6 +669,10 @@ export async function grind(
       state: out,
       inlined: [...inlined],
       rewritten: [...latex.keys()],
+      inlinedInto: [...edits]
+        .filter(([, e]) => e.inlined.length > 0)
+        .map(([id]) => id),
+      added: [...edits.values()].flatMap((e) => e.hoisted.map((h) => h.id)),
       split: [...edits].filter(([, e]) => e.split > 0).map(([id]) => id),
       pushed: [...edits].filter(([, e]) => e.gpu.length > 0).map(([id]) => id),
       diffs,

@@ -18,6 +18,7 @@ import {
 } from "./rewrite";
 import { diffOf, shortNumber } from "./diff";
 import { Kind, Names, distribute, kindOf, pushToGpu } from "./hot";
+import { Definitions, hoistRepeats, inlineDefinitions } from "./inline";
 import type { GraphState } from "../../../graph-state";
 import "../../tests/run_calc_for_tests";
 
@@ -354,5 +355,89 @@ describe("changing values", () => {
       String.raw`z<\left(H\operatorname{with}T=T+0\cdot x\right)`
     );
     expect(push(String.raw`z=0`, "restriction", ["T"])).toBeUndefined();
+  });
+});
+
+describe("writing out and hoisting", () => {
+  const r = String.raw;
+  const fn = (latex: string) => {
+    const f = parseRootLatex(cfg, latex);
+    if (f.type !== "FunctionDefinition") throw new Error("not a function");
+    return [f.symbol.symbol, f] as const;
+  };
+  const right = (latex: string) => {
+    const d = parseRootLatex(cfg, latex);
+    if (d.type !== "Assignment") throw new Error("not a definition");
+    return [d.left.symbol, d.right] as const;
+  };
+  const defs: Definitions = {
+    functions: new Map([
+      fn(r`d(a)=\min(a-H)`),
+      fn(r`g(a)=\sum_{n=1}^{3}a`),
+      fn(r`k(a)=a\operatorname{with}T=2`),
+      fn(r`w(a)=a+n`),
+      fn(r`q(a)=q(a)`),
+    ]),
+    perPixel: new Map([right(r`A=\min(x-H)`), right(r`B=x+A`)]),
+  };
+  const inline = (latex: string) => {
+    const out = inlineDefinitions(parseRootLatex(cfg, latex), defs);
+    return { latex: printLatex(cfg, out.root), inlined: out.inlined.sort() };
+  };
+  test("writes calls out as their bodies", () => {
+    expect(inline(r`c=d(x)+d(y)`)).toEqual({
+      latex: r`c=\operatorname{min}\left(x-H\right)+\operatorname{min}\left(y-H\right)`,
+      inlined: ["d"],
+    });
+  });
+  test("writes out definitions read once, through each other", () => {
+    expect(inline(r`c=B`)).toEqual({
+      latex: r`c=x+\operatorname{min}\left(x-H\right)`,
+      inlined: ["A", "B"],
+    });
+    // Read twice: computing it twice would cost more.
+    expect(inline(r`c=A+A^{2}`).inlined).toEqual([]);
+  });
+  test("doesn't capture names or nest a with", () => {
+    // `n` in the argument would be captured by the sum in `g`.
+    expect(inline(r`c=g(n)`).inlined).toEqual([]);
+    expect(inline(r`c=g(x)`).inlined).toEqual(["g"]);
+    // `w` reads the global `n`, which the sum here binds.
+    expect(inline(r`c=\sum_{n=1}^{3}w(x)`).inlined).toEqual([]);
+    expect(inline(r`c=k(x)`).inlined).toEqual([]);
+    expect(inline(r`c=q(x)`).latex).toContain("q");
+  });
+
+  const names: Names = {
+    constants: new Set(["H", "T", "K"]),
+    typedIn: new Set(["K"]),
+    defined: new Set(["H", "T", "K"]),
+  };
+  const hoist = (latex: string) => {
+    let i = 0;
+    const out = hoistRepeats(parseRootLatex(cfg, latex), names, () => ({
+      id: `n${++i}`,
+      symbol: `G_rind${i}`,
+    }));
+    return {
+      latex: printLatex(cfg, out.root),
+      hoisted: out.hoisted.map((h) => printLatex(cfg, h.node)),
+    };
+  };
+  test("moves repeated changing parts into definitions", () => {
+    expect(hoist(r`c=\min(x-2H)+\min(y-2H)`)).toEqual({
+      latex: r`c=\operatorname{min}\left(x-G_{rind1}\right)+\operatorname{min}\left(y-G_{rind1}\right)`,
+      hoisted: [r`2\cdot H`],
+    });
+  });
+  test("leaves single, typed-in and bound parts alone", () => {
+    expect(hoist(r`c=\min(x-2H)+\min(y-3H)`).hoisted).toEqual([]);
+    expect(hoist(r`c=\min(x-2K)+\min(y-2K)`).hoisted).toEqual([]);
+    expect(hoist(r`c=\min(x-H)+\min(y-H)`).hoisted).toEqual([]);
+    expect(hoist(r`c=\sum_{n=1}^{2}\min(x-nH)+\min(y-nH)`).hoisted).toEqual([]);
+    expect(
+      hoist(r`c=\left(\min(x-2H)+\min(y-2H)\right)\operatorname{with}T=1`)
+        .hoisted
+    ).toEqual([]);
   });
 });

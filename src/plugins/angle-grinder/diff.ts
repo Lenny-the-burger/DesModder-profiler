@@ -31,6 +31,10 @@ export interface HotChanges {
   split: number;
   /** Variables rebound so what they feed is computed in the shader. */
   gpu: string[];
+  /** Functions and definitions written out. */
+  inlined: string[];
+  /** Repeated parts moved into new definitions. */
+  hoisted: number;
 }
 
 export interface ExpressionDiff extends HotChanges {
@@ -133,7 +137,7 @@ export function diffOf(
   used: Iterable<string>,
   values: ReadonlyMap<string, Value>,
   tree: Aug.Latex.AnyRootOrChild = root,
-  changes: HotChanges = { split: 0, gpu: [] }
+  changes: HotChanges = { split: 0, gpu: [], inlined: [], hoisted: 0 }
 ): ExpressionDiff {
   const symbols = [...used].filter((s) => values.has(s));
   const name = (s: string) =>

@@ -185,6 +185,11 @@ export default class AngleGrinder extends PluginController {
       if ((item.latex ?? "") !== before.get(item.id)) continue;
       item.latex = after.get(item.id);
     }
+    // Definitions added for repeated parts.
+    const present = new Set(next.expressions.list.map((item) => item.id));
+    for (const item of result.state.expressions.list)
+      if (result.added.includes(item.id) && !present.has(item.id))
+        next.expressions.list.push(item);
     this.calc.setState(next, { allowUndo: true });
     this.status = { type: "applied", result, source };
     this.update();

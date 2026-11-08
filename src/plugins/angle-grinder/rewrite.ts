@@ -77,7 +77,7 @@ export function valueNode(v: Value): Child {
   }
 }
 
-function bindingsOf(node: Node): string[] {
+export function bindingsOf(node: Node): string[] {
   switch (node.type) {
     case "FunctionDefinition":
       return node.argSymbols.map((s) => s.symbol);

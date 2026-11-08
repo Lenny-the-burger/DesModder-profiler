@@ -405,6 +405,7 @@ angle-grinder-step-measure = Compiling the graph as it is…
 angle-grinder-step-evaluate = Evaluating values…
 angle-grinder-step-rewrite = Rewriting…
 angle-grinder-step-verify = Compiling the result…
+angle-grinder-step-inline = Writing out functions…
 angle-grinder-step-distribute = Splitting products…
 angle-grinder-step-push = Moving work into shaders…
 angle-grinder-uniforms = Uniform slots, all shaders
@@ -419,6 +420,10 @@ angle-grinder-summary = Wrote { $values ->
     [one] 1 expression
    *[other] { $expressions } expressions
   }.
+angle-grinder-inline-summary = Wrote function calls and definitions out in { $count ->
+    [one] 1 expression
+   *[other] { $count } expressions
+  }, so values they read more than once take uniform slots once.
 angle-grinder-split-summary = Split products in { $count ->
     [one] 1 expression
    *[other] { $count } expressions
@@ -430,6 +435,11 @@ angle-grinder-push-summary = { $count ->
 angle-grinder-diff-split = { $count ->
     [one] Split a product, so its changing part is folded into fewer numbers.
    *[other] Split { $count } products, so their changing parts are folded into fewer numbers.
+  }
+angle-grinder-diff-inline = Wrote out { $names } here, so the values they read share uniform slots.
+angle-grinder-diff-hoist = { $count ->
+    [one] Moved a repeated part into a new definition, so it takes uniform slots once.
+   *[other] Moved { $count } repeated parts into new definitions, so each takes uniform slots once.
   }
 angle-grinder-diff-gpu = Computes what { $names } feed in the shader, instead of getting it in uniform slots.
 angle-grinder-skipped = { $count ->
