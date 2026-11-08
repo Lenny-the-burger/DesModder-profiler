@@ -406,6 +406,7 @@ angle-grinder-step-evaluate = Evaluating values…
 angle-grinder-step-rewrite = Rewriting…
 angle-grinder-step-verify = Compiling the result…
 angle-grinder-step-inline = Writing out functions…
+angle-grinder-step-unpack = Taking points and short lists apart…
 angle-grinder-step-fold = Working out list values ahead of time…
 angle-grinder-step-distribute = Splitting products…
 angle-grinder-step-push = Moving work into shaders…
@@ -431,6 +432,10 @@ angle-grinder-fold-summary = Worked out values in lists ahead of time in { $coun
     [one] 1 expression
    *[other] { $count } expressions
   }: values that change linearly with position are computed once per element instead of for every pixel, so the shader costs less.
+angle-grinder-unpack-summary = Took points and short lists apart in { $count ->
+    [one] 1 expression
+   *[other] { $count } expressions
+  }: Desmos charges for building points, reading their coordinates and reading list elements, so working with the numbers directly costs less.
 angle-grinder-split-summary = Split products in { $count ->
     [one] 1 expression
    *[other] { $count } expressions
@@ -449,6 +454,10 @@ angle-grinder-diff-hoist = { $count ->
    *[other] Moved { $count } repeated parts into new definitions, so each takes uniform slots once.
   }
 angle-grinder-diff-fold = Works out { $names } once per element ahead of time, since they change linearly with position, instead of for every pixel.
+angle-grinder-diff-unpack = { $count ->
+    [one] Took a piecewise point apart by coordinate, or wrote out a loop over a short list, so the shader works with plain numbers.
+   *[other] Took { $count } piecewise points apart by coordinate, or wrote out loops over short lists, so the shader works with plain numbers.
+  }
 angle-grinder-diff-gpu = Computes what { $names } feed in the shader, instead of getting it in uniform slots.
 angle-grinder-skipped = { $count ->
     [one] 1 expression was left as it was, because rewriting it changed what it does.

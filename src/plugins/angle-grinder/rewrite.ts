@@ -292,7 +292,30 @@ export function substitute<T extends Node>(
 }
 
 /** Structural equality of two parsed trees. */
-function sameTree(a: unknown, b: unknown): boolean {
+/**
+ * A negated number as the number itself: in a list, `-0.1` reads back as one
+ * constant, elsewhere as a negation.
+ */
+function folded(x: unknown): unknown {
+  if (
+    typeof x === "object" &&
+    x !== null &&
+    (x as { type?: unknown }).type === "Negative"
+  ) {
+    const { arg } = x as { arg: unknown };
+    if (
+      typeof arg === "object" &&
+      arg !== null &&
+      (arg as { type?: unknown }).type === "Constant"
+    )
+      return { type: "Constant", value: -(arg as { value: number }).value };
+  }
+  return x;
+}
+
+function sameTree(a0: unknown, b0: unknown): boolean {
+  const a = folded(a0);
+  const b = folded(b0);
   if (a === b) return true;
   if (typeof a === "number" && typeof b === "number")
     return Number.isNaN(a) && Number.isNaN(b);

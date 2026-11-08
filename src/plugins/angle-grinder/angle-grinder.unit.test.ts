@@ -20,6 +20,8 @@ import { diffOf, shortNumber } from "./diff";
 import { Kind, Names, distribute, kindOf, pushToGpu } from "./hot";
 import { Definitions, hoistRepeats, inlineDefinitions } from "./inline";
 import { foldAffine } from "./affine";
+import { splitPoints, unrollLists } from "./unpack";
+import type { Aug } from "../../../text-mode-core";
 import type { GraphState } from "../../../graph-state";
 import "../../tests/run_calc_for_tests";
 
@@ -132,6 +134,16 @@ describe("names rebound by with and for", () => {
 describe("substitution", () => {
   test("replaces free names", () => {
     expect(sub("c=a+b", { a: "2" })).toBe("c=2+b");
+  });
+
+  test("lists with negative numbers typed in read back the same", () => {
+    const root = parseRootLatex(cfg, String.raw`c=L\left[1\right]x`);
+    const typed = substitute(
+      root,
+      new Map([["L", valueNode({ type: "list", value: [-0.1, 2] })]]),
+      new Set()
+    );
+    expect(roundTrips(cfg, typed)).toBe(true);
   });
 
   test("keeps names bound by functions, sums and comprehensions", () => {
@@ -525,5 +537,170 @@ describe("folding affine values out of comprehensions", () => {
         r`c=\left[b_{V}\operatorname{for}n=\left[1...80\right]\right]\operatorname{with}T=1`
       ).folded
     ).toEqual([]);
+  });
+});
+
+describe("taking points and short lists apart", () => {
+  const r = String.raw;
+  const plain = (s: string) => s.replace(/\\left|\\right/g, "");
+  const split = (latex: string) => {
+    const s = splitPoints(parseRootLatex(cfg, latex));
+    return { latex: plain(printLatex(cfg, s.root)), count: s.count };
+  };
+  test("splits a piecewise of points by coordinate", () => {
+    expect(
+      split(r`f(t)=\left\{t.x<1:\left(t.x+1,t.y,2\right),t\right\}`)
+    ).toEqual({
+      latex: r`f(t)=(\{t.x<1:t.x+1,t.x\},\{t.x<1:t.y,t.y\},\{t.x<1:2,t.z\})`,
+      count: 1,
+    });
+    expect(
+      split(r`p=\left\{x<1:\left(1,x\right),y<2:\left(x,2\right),q\right\}`)
+    ).toEqual({
+      // The inner piecewise is split, then the outer. `{c:1,…}` prints as
+      // `{c,…}`.
+      latex: r`p=(\{x<1,y<2:x,q.x\},\{x<1:x,y<2:2,q.y\})`,
+      count: 2,
+    });
+  });
+  test("leaves numbers, costly conditions and other branches alone", () => {
+    expect(split(r`p=\left\{x<1:2,3\right\}`).count).toBe(0);
+    expect(split(r`p=\left\{g(x)<1:\left(1,2,3\right),q\right\}`).count).toBe(
+      0
+    );
+    expect(
+      split(r`p=\left\{x<1:\left(1,2,3\right),q+\left(1,1,1\right)\right\}`)
+        .count
+    ).toBe(0);
+  });
+
+  const values = new Map<string, Value>([
+    ["L", { type: "list", value: [1, 2, 3] }],
+    ["S", { type: "list", value: [4, 5, 6] }],
+    ["N", { type: "number", value: 3 }],
+    [
+      "P",
+      {
+        type: "points",
+        value: [
+          [1, 2],
+          [3, 4],
+          [5, 6],
+        ],
+      },
+    ],
+    ["V", { type: "list", value: [7, 8] }],
+    // A slider that changes.
+    ["T", { type: "number", value: 7 }],
+  ]);
+  const unroll = (latex: string, ...defs: string[]) => {
+    const variables = new Map<string, Aug.Latex.AnyChild>();
+    const functions = new Map<string, Aug.Latex.FunctionDefinition>();
+    for (const d of defs) {
+      const root = parseRootLatex(cfg, d);
+      if (root.type === "Assignment")
+        variables.set(root.left.symbol, root.right);
+      if (root.type === "FunctionDefinition")
+        functions.set(root.symbol.symbol, root);
+    }
+    const u = unrollLists(parseRootLatex(cfg, latex), {
+      values,
+      fixed: new Set(["L", "S", "N", "P"]),
+      variables,
+      functions,
+    });
+    return { latex: plain(printLatex(cfg, u.root)), count: u.count };
+  };
+  test("writes out sums and products with fixed bounds", () => {
+    expect(unroll(r`a=\sum_{n=1}^{N}L\left[n\right]x`).latex).toBe(
+      r`a=L[1]\cdot x+L[2]\cdot x+L[3]\cdot x`
+    );
+    // A definition reading the index sees it through a with.
+    expect(unroll(r`a=\prod_{n=1}^{2}qx`, r`q=L\left[n\right]`).latex).toBe(
+      r`a=(q\cdot x\operatorname{with}n=1)\cdot (q\cdot x\operatorname{with}n=2)`
+    );
+    expect(unroll(r`a=\sum_{n=1}^{L.\operatorname{count}}n`).latex).toBe(
+      r`a=1+2+3`
+    );
+  });
+  test("writes out reductions of short lists", () => {
+    expect(
+      unroll(r`a=\operatorname{total}\left(\sin\left(xL\right)\right)`).latex
+    ).toBe(
+      r`a=\operatorname{sin}(x\cdot L[1])+\operatorname{sin}(x\cdot L[2])+\operatorname{sin}(x\cdot L[3])`
+    );
+    // Broadcasts stop at the shortest list, and go through functions.
+    expect(
+      unroll(
+        r`a=\min\left(b\left(\left(x,y,z\right)-P,S\right)\right)`,
+        r`b\left(p,s\right)=\left|p.x\right|-s`
+      ).latex
+    ).toBe(r`a=\operatorname{min}(b((x,y,z)-P[1],S[1]),b((x,y,z)-P[2],S[2]))`);
+    // A max of several values goes element by element, a max of one list
+    // takes the whole list.
+    expect(
+      unroll(
+        r`a=\min\left(b\left(P\right)\right)`,
+        r`b\left(p\right)=\max\left(p.x,1\right)`
+      ).count
+    ).toBe(1);
+    expect(
+      unroll(
+        r`a=\min\left(b\left(P\right)\right)`,
+        r`b\left(p\right)=\max\left(p.x\right)`
+      ).count
+    ).toBe(0);
+    // Definitions a function's body reads see its parameters.
+    expect(
+      unroll(
+        r`a=\operatorname{total}\left(b\left(L\right)\right)`,
+        r`b\left(p\right)=q+1`,
+        r`q=2p`
+      ).latex
+    ).toBe(r`a=b(L[1])+b(L[2])+b(L[3])`);
+    expect(
+      unroll(
+        r`a=\operatorname{total}\left(b\left(L\right)\right)`,
+        r`b\left(p\right)=q+1`,
+        r`q=\operatorname{total}\left(p\right)`
+      ).count
+    ).toBe(0);
+    expect(
+      unroll(
+        r`a=\operatorname{mean}\left(\left[xn\operatorname{for}n=\left[1...3\right]\right]\right)`
+      ).latex
+    ).toBe(r`a=\frac{x\cdot 1+x\cdot 2+x\cdot 3}{3}`);
+    expect(unroll(r`a=\max\left(\left[x,y,2\right]\right)`).latex).toBe(
+      r`a=\operatorname{max}(x,y,2)`
+    );
+  });
+  test("unrolls changing lists only when their length is written out", () => {
+    // V changes, but is written element by element.
+    expect(
+      unroll(r`a=\operatorname{total}\left(xV\right)`, r`V=\left[T,8\right]`)
+        .latex
+    ).toBe(r`a=x\cdot V[1]+x\cdot V[2]`);
+    expect(
+      unroll(r`a=\operatorname{total}\left(xV\right)`, r`V=\left[1...T\right]`)
+        .count
+    ).toBe(0);
+  });
+  test("leaves lists that change, long lists and whole-list uses alone", () => {
+    expect(unroll(r`a=\operatorname{total}\left(xV\right)`).count).toBe(0);
+    expect(
+      unroll(
+        r`a=\operatorname{total}\left(L\operatorname{length}\left(L\right)\right)`
+      ).count
+    ).toBe(0);
+    expect(
+      unroll(
+        r`a=\operatorname{total}\left(f\left(L\right)\right)`,
+        r`f\left(l\right)=l\operatorname{total}\left(l\right)`
+      ).count
+    ).toBe(0);
+    expect(
+      unroll(r`a=\operatorname{total}\left(xw\right)`, r`w=xL`).count
+    ).toBe(0);
+    expect(unroll(r`a=\sum_{n=1}^{100}nx`).count).toBe(0);
   });
 });

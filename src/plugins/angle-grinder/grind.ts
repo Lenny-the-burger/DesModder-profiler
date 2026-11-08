@@ -3,7 +3,7 @@
  * it draws the same. The result is plain graph state that works without
  * DesModder.
  *
- * Five passes, each measured by compiling the result in an offscreen
+ * Six passes, each measured by compiling the result in an offscreen
  * calculator, which also compiles shaders Desmos would reject for their cost:
  *
  * 1. Values that don't change are typed into the expressions that end up in
@@ -11,11 +11,14 @@
  * 2. Function calls and definitions are written out into the expressions
  *    shaders come from, and repeated parts moved into new definitions, so
  *    values read more than once share slots (see inline.ts).
- * 3. Shaders over the cost limit get values that are affine in the pixel
+ * 3. Piecewises of points are taken apart by coordinate, and loops and
+ *    reductions over short lists that don't change are written out, which
+ *    Desmos's cost estimate charges less for (see unpack.ts).
+ * 4. Shaders over the cost limit get values that are affine in the pixel
  *    folded out of their list comprehensions (see affine.ts).
- * 4. Products of a changing value and a sum are split when that folds the
+ * 5. Products of a changing value and a sum are split when that folds the
  *    changing part into fewer numbers (see `distribute`).
- * 5. Shaders still out of uniform slots compute what they need from the
+ * 6. Shaders still out of uniform slots compute what they need from the
  *    sliders themselves, if that stays under the cost limit (see `pushToGpu`).
  */
 import type { GraphState } from "../../../graph-state";
@@ -46,6 +49,7 @@ import {
   valueSize,
 } from "./rewrite";
 import { COST_LIMIT, UNIFORM_BUDGET } from "./summary";
+import { splitPoints, unrollLists } from "./unpack";
 
 type Node = Aug.Latex.AnyRootOrChild;
 
@@ -87,6 +91,8 @@ export interface GrindResult {
   added: string[];
   /** Expressions with affine values folded out of comprehensions. */
   folded: string[];
+  /** Expressions with piecewise points taken apart or short lists unrolled. */
+  unpacked: string[];
   /** Expressions with products split. */
   split: string[];
   /** Expressions that compute changing values in the shader. */
@@ -184,6 +190,8 @@ interface Edit {
   hoisted: Hoisted[];
   /** Definitions folded into per-element lists. */
   affine: string[];
+  /** Piecewise points taken apart, and loops over short lists written out. */
+  unpacked: number;
   split: number;
   gpu: string[];
 }
@@ -194,6 +202,7 @@ const unchanged = (tree: Node): Edit => ({
   inlined: [],
   hoisted: [],
   affine: [],
+  unpacked: 0,
   split: 0,
   gpu: [],
 });
@@ -373,15 +382,16 @@ export async function grind(
           if (s.cost > COST_LIMIT) {
             // A shader over the cost limit doesn't work at all, so less cost
             // is what counts. Taking more slots for it is fine if that gets
-            // it under the limit.
+            // it under the limit, or the slots still fit.
             if (
               n.cost < s.cost &&
-              (n.cost <= COST_LIMIT || n.uniforms <= s.uniforms)
+              (n.cost <= COST_LIMIT || n.uniforms <= s.uniforms || !atCap(n))
             )
               better = true;
             else worse = true;
             continue;
           }
+          // Under the cost limit, cost is headroom; slots are what count.
           if (n.uniforms > s.uniforms) worse = true;
           else if (
             n.cost > s.cost &&
@@ -447,6 +457,30 @@ export async function grind(
         tried.set(id, next);
       }
       await keepBetter("inline", tried);
+    }
+
+    progress("unpack");
+    {
+      const fixed = new Set(inlineCandidates(a, varying));
+      const ctx = { values, fixed, variables, functions };
+      const tried = new Map<string, Edit>();
+      for (const e of targets) {
+        if (e.id.includes(":") || !roundTrips(cfg, e.root)) continue;
+        const edit = editOf(e);
+        const p = splitPoints(edit.tree);
+        const u = unrollLists(p.root, ctx);
+        if (p.count + u.count === 0) continue;
+        const next: Edit = {
+          ...edit,
+          tree: u.root,
+          // Unrolled loops read list elements that can be typed in.
+          typeIn: true,
+          unpacked: edit.unpacked + p.count + u.count,
+        };
+        if (!printsBack(next)) continue;
+        tried.set(e.id, next);
+      }
+      await keepBetter("unpack", tried);
     }
 
     progress("fold");
@@ -689,6 +723,7 @@ export async function grind(
             inlined: edit.inlined,
             hoisted: edit.hoisted.filter((h) => !h.folded).length,
             affine: edit.affine,
+            unpacked: edit.unpacked,
           }
         )
       );
@@ -728,6 +763,7 @@ export async function grind(
       folded: [...edits]
         .filter(([, e]) => e.affine.length > 0)
         .map(([id]) => id),
+      unpacked: [...edits].filter(([, e]) => e.unpacked > 0).map(([id]) => id),
       split: [...edits].filter(([, e]) => e.split > 0).map(([id]) => id),
       pushed: [...edits].filter(([, e]) => e.gpu.length > 0).map(([id]) => id),
       diffs,

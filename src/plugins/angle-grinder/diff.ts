@@ -37,6 +37,8 @@ export interface HotChanges {
   hoisted: number;
   /** Definitions folded into per-element lists. */
   affine: string[];
+  /** Piecewise points taken apart, and loops over short lists written out. */
+  unpacked: number;
 }
 
 export interface ExpressionDiff extends HotChanges {
@@ -145,6 +147,7 @@ export function diffOf(
     inlined: [],
     hoisted: 0,
     affine: [],
+    unpacked: 0,
   }
 ): ExpressionDiff {
   const symbols = [...used].filter((s) => values.has(s));
