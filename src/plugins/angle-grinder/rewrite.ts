@@ -100,6 +100,158 @@ function bindingsOf(node: Node): string[] {
 }
 
 /**
+ * Rebuild `node` with each child replaced by `f` of it, given the names bound
+ * around that child. The children are the ones `forEachChild` in analyze.ts
+ * visits: a function's name in a call or a prime, a derivative's variable, a
+ * method's name and the names a node binds are left as they are.
+ */
+export function mapChildren<T extends Node>(
+  node: T,
+  bound: ReadonlySet<string>,
+  f: (child: Child, bound: ReadonlySet<string>) => Child
+): T {
+  const names = bindingsOf(node);
+  const inner = names.length > 0 ? new Set([...bound, ...names]) : bound;
+  // `f` keeps the kind of node where the tree needs it (conditions, points).
+  const c = <C extends Child>(x: C, b: ReadonlySet<string> = bound) =>
+    f(x, b) as C;
+  const m: Node = node;
+  let out: Node;
+  switch (m.type) {
+    case "Constant":
+    case "Identifier":
+      return node;
+    case "FunctionCall":
+      out = { ...m, args: m.args.map((a) => c(a)) };
+      break;
+    case "Equation":
+    case "Regression":
+      out = { ...m, left: c(m.left), right: c(m.right) };
+      break;
+    case "Assignment":
+      out = { ...m, right: c(m.right) };
+      break;
+    case "FunctionDefinition":
+      out = { ...m, definition: c(m.definition, inner) };
+      break;
+    case "Visualization":
+      out = { ...m, args: m.args.map((a) => c(a)) };
+      break;
+    case "Integral":
+      out = {
+        ...m,
+        start: c(m.start),
+        end: c(m.end),
+        integrand: c(m.integrand, inner),
+      };
+      break;
+    case "Derivative":
+      out = { ...m, arg: c(m.arg, inner) };
+      break;
+    case "Prime":
+      out = { ...m, arg: { ...m.arg, args: m.arg.args.map((a) => c(a)) } };
+      break;
+    case "List":
+    case "Seq":
+      out = { ...m, args: m.args.map((a) => c(a)) };
+      break;
+    case "Range":
+      out = {
+        ...m,
+        start: m.start.map((a) => c(a)),
+        end: m.end.map((a) => c(a)),
+      };
+      break;
+    case "ListAccess":
+      out = { ...m, list: c(m.list), index: c(m.index) };
+      break;
+    case "DotAccess":
+      out = {
+        ...m,
+        object: c(m.object),
+        property:
+          m.property.type === "FunctionCall"
+            ? { ...m.property, args: m.property.args.map((a) => c(a)) }
+            : m.property,
+      };
+      break;
+    case "OrderedPairAccess":
+      out = { ...m, point: c(m.point) };
+      break;
+    case "UpdateRule":
+      out = { ...m, expression: c(m.expression) };
+      break;
+    case "AssignmentExpression":
+      out = { ...m, expression: c(m.expression) };
+      break;
+    case "ListComprehension":
+      out = {
+        ...m,
+        expr: c(m.expr, inner),
+        assignments: m.assignments.map((a) => ({
+          ...a,
+          expression: c(a.expression),
+        })),
+        parameters: m.parameters.map((p) => ({
+          ...p,
+          bounds: [c(p.bounds[0]), c(p.bounds[1])] as [Child, Child],
+        })),
+      };
+      break;
+    case "Substitution":
+      out = {
+        ...m,
+        body: c(m.body, inner),
+        assignments: m.assignments.map((a) => ({
+          ...a,
+          expression: c(a.expression),
+        })),
+      };
+      break;
+    case "Piecewise":
+      out = {
+        ...m,
+        condition: m.condition === true ? true : c(m.condition),
+        consequent: c(m.consequent),
+        alternate: c(m.alternate),
+      };
+      break;
+    case "Restriction":
+      out = {
+        ...m,
+        condition: m.condition === true ? true : c(m.condition),
+      };
+      break;
+    case "RepeatedOperator":
+      out = {
+        ...m,
+        start: c(m.start),
+        end: c(m.end),
+        expression: c(m.expression, inner),
+      };
+      break;
+    case "BinaryOperator":
+      out = { ...m, left: c(m.left), right: c(m.right) };
+      break;
+    case "Or":
+      out = { ...m, left: c(m.left), right: c(m.right) };
+      break;
+    case "Comparator":
+      out = { ...m, left: c(m.left), right: c(m.right) };
+      break;
+    case "Negative":
+    case "Norm":
+    case "Factorial":
+      out = { ...m, arg: c(m.arg) };
+      break;
+    case "ComparatorChain":
+      out = { ...m, args: m.args.map((a) => c(a)) };
+      break;
+  }
+  return out as T;
+}
+
+/**
  * Rebuild `node`, replacing each free identifier that has a value in
  * `values` with that value. The names replaced are added to `used`.
  */
@@ -108,172 +260,35 @@ export function substitute<T extends Node>(
   values: ReadonlyMap<string, Child>,
   used: Set<string>
 ): T {
-  const go = <N extends Node>(n: N, bound: ReadonlySet<string>): N => {
-    const names = bindingsOf(n);
-    const inner = names.length > 0 ? new Set([...bound, ...names]) : bound;
-    // The bodies that see the bound names. Everything else sees `bound`.
-    const c = <C extends Child>(x: C, b: ReadonlySet<string> = bound) =>
-      go(x, b);
-    const m = n;
-    let out: Node;
-    switch (m.type) {
-      case "Constant":
-        return n;
-      case "Identifier": {
-        const v = !bound.has(m.symbol) ? values.get(m.symbol) : undefined;
-        if (!v) return n;
-        used.add(m.symbol);
-        return v as unknown as N;
-      }
-      case "FunctionCall": {
-        const args = m.args.map((a) => c(a));
-        const v = !bound.has(m.callee.symbol)
-          ? values.get(m.callee.symbol)
-          : undefined;
-        if (v) {
-          // `a(b)` with a variable `a` is a product.
-          used.add(m.callee.symbol);
-          out = {
-            type: "BinaryOperator",
-            name: "Multiply",
-            left: v,
-            right:
-              args.length === 1
-                ? args[0]
-                : { type: "Seq", parenWrapped: true, args },
-          };
-          return out as N;
-        }
-        out = { ...m, args };
-        break;
-      }
-      case "Equation":
-      case "Regression":
-        out = { ...m, left: c(m.left), right: c(m.right) };
-        break;
-      case "Assignment":
-        out = { ...m, right: c(m.right) };
-        break;
-      case "FunctionDefinition":
-        out = { ...m, definition: c(m.definition, inner) };
-        break;
-      case "Visualization":
-        out = { ...m, args: m.args.map((a) => c(a)) };
-        break;
-      case "Integral":
-        out = {
-          ...m,
-          start: c(m.start),
-          end: c(m.end),
-          integrand: c(m.integrand, inner),
-        };
-        break;
-      case "Derivative":
-        out = { ...m, arg: c(m.arg, inner) };
-        break;
-      case "Prime":
-        out = { ...m, arg: { ...m.arg, args: m.arg.args.map((a) => c(a)) } };
-        break;
-      case "List":
-      case "Seq":
-        out = { ...m, args: m.args.map((a) => c(a)) };
-        break;
-      case "Range":
-        out = {
-          ...m,
-          start: m.start.map((a) => c(a)),
-          end: m.end.map((a) => c(a)),
-        };
-        break;
-      case "ListAccess":
-        out = { ...m, list: c(m.list), index: c(m.index) };
-        break;
-      case "DotAccess":
-        out = {
-          ...m,
-          object: c(m.object),
-          property:
-            m.property.type === "FunctionCall"
-              ? { ...m.property, args: m.property.args.map((a) => c(a)) }
-              : m.property,
-        };
-        break;
-      case "OrderedPairAccess":
-        out = { ...m, point: c(m.point) };
-        break;
-      case "UpdateRule":
-        out = { ...m, expression: c(m.expression) };
-        break;
-      case "AssignmentExpression":
-        out = { ...m, expression: c(m.expression) };
-        break;
-      case "ListComprehension":
-        out = {
-          ...m,
-          expr: c(m.expr, inner),
-          assignments: m.assignments.map((a) => ({
-            ...a,
-            expression: c(a.expression),
-          })),
-          parameters: m.parameters.map((p) => ({
-            ...p,
-            bounds: [c(p.bounds[0]), c(p.bounds[1])] as [Child, Child],
-          })),
-        };
-        break;
-      case "Substitution":
-        out = {
-          ...m,
-          body: c(m.body, inner),
-          assignments: m.assignments.map((a) => ({
-            ...a,
-            expression: c(a.expression),
-          })),
-        };
-        break;
-      case "Piecewise":
-        out = {
-          ...m,
-          condition: m.condition === true ? true : c(m.condition),
-          consequent: c(m.consequent),
-          alternate: c(m.alternate),
-        };
-        break;
-      case "Restriction":
-        out = {
-          ...m,
-          condition: m.condition === true ? true : c(m.condition),
-        };
-        break;
-      case "RepeatedOperator":
-        out = {
-          ...m,
-          start: c(m.start),
-          end: c(m.end),
-          expression: c(m.expression, inner),
-        };
-        break;
-      case "BinaryOperator":
-        out = { ...m, left: c(m.left), right: c(m.right) };
-        break;
-      case "Or":
-        out = { ...m, left: c(m.left), right: c(m.right) };
-        break;
-      case "Comparator":
-        out = { ...m, left: c(m.left), right: c(m.right) };
-        break;
-      case "Negative":
-      case "Norm":
-      case "Factorial":
-        out = { ...m, arg: c(m.arg) };
-        break;
-      case "ComparatorChain":
-        out = { ...m, args: m.args.map((a) => c(a)) };
-        break;
+  const go = (n: Node, bound: ReadonlySet<string>): Node => {
+    if (n.type === "Identifier") {
+      const v = !bound.has(n.symbol) ? values.get(n.symbol) : undefined;
+      if (!v) return n;
+      used.add(n.symbol);
+      return v;
     }
-    return out as N;
+    if (n.type === "FunctionCall") {
+      const v = !bound.has(n.callee.symbol)
+        ? values.get(n.callee.symbol)
+        : undefined;
+      if (v) {
+        // `a(b)` with a variable `a` is a product.
+        const args = n.args.map((a) => go(a, bound) as Child);
+        used.add(n.callee.symbol);
+        return {
+          type: "BinaryOperator",
+          name: "Multiply",
+          left: v,
+          right:
+            args.length === 1
+              ? args[0]
+              : { type: "Seq", parenWrapped: true, args },
+        };
+      }
+    }
+    return mapChildren(n, bound, (c, b) => go(c, b) as Child);
   };
-  return go(node, new Set());
+  return go(node, new Set()) as T;
 }
 
 /** Structural equality of two parsed trees. */

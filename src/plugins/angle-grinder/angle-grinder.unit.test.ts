@@ -17,6 +17,7 @@ import {
   Value,
 } from "./rewrite";
 import { diffOf, shortNumber } from "./diff";
+import { Kind, Names, distribute, kindOf, pushToGpu } from "./hot";
 import type { GraphState } from "../../../graph-state";
 import "../../tests/run_calc_for_tests";
 
@@ -248,5 +249,110 @@ describe("diffs", () => {
     expect(shortNumber(NaN)).toBe(String.raw`\operatorname{undefined}`);
     expect(shortNumber(-Infinity)).toBe(String.raw`-\infty`);
     expect(shortNumber(1234567.89)).toBe("1234570");
+  });
+});
+
+describe("changing values", () => {
+  const names: Names = {
+    constants: new Set(["C", "N", "T", "K", "P"]),
+    typedIn: new Set(["K"]),
+    defined: new Set(["C", "N", "T", "K", "P", "p", "f"]),
+  };
+  const kind = (latex: string) => kindOf(parseRootLatex(cfg, latex), names);
+  const split = (latex: string) => {
+    const d = distribute(parseRootLatex(cfg, latex), names);
+    return { latex: printLatex(cfg, d.root), count: d.count };
+  };
+  test("kinds", () => {
+    expect(kind("2K+1")).toBe(Kind.Cold);
+    expect(kind(String.raw`\sin(T)K`)).toBe(Kind.Hot);
+    expect(kind("T+x")).toBe(Kind.Pixel);
+    // Defined but not a constant: per pixel.
+    expect(kind("p")).toBe(Kind.Pixel);
+    // The graph's own functions count as per pixel.
+    expect(kind("f(T)")).toBe(Kind.Pixel);
+    expect(kind(String.raw`\pi T`)).toBe(Kind.Hot);
+  });
+  test("splits a changing product off a per-pixel sum", () => {
+    expect(split(String.raw`\left(p-C\right)\cdot N`)).toEqual({
+      latex: String.raw`p\cdot N-C\cdot N`,
+      count: 1,
+    });
+    expect(split(String.raw`N\cdot\left(p+C\right)`).latex).toBe(
+      String.raw`N\cdot p+N\cdot C`
+    );
+    expect(split(String.raw`\left(C-p\right)\cdot N`).latex).toBe(
+      String.raw`C\cdot N-p\cdot N`
+    );
+    expect(split(String.raw`\left(-p-C\right)\cdot N`).latex).toBe(
+      String.raw`-\left(p\cdot N+C\cdot N\right)`
+    );
+  });
+  test("inside functions, parameters are per pixel", () => {
+    expect(split(String.raw`g(a)=\left(a-C\right)\cdot N`).latex).toBe(
+      String.raw`g\left(a\right)=a\cdot N-C\cdot N`
+    );
+  });
+  test("leaves products alone when nothing changing would fold", () => {
+    expect(split(String.raw`\left(p-K\right)\cdot N`).count).toBe(0);
+    expect(split(String.raw`\left(p-x\right)\cdot N`).count).toBe(0);
+    expect(split(String.raw`\left(T-C\right)\cdot N`).count).toBe(0);
+    expect(split(String.raw`\left(p-C\right)\cdot x`).count).toBe(0);
+  });
+  test("split products print and read back the same", () => {
+    const d = distribute(
+      parseRootLatex(
+        cfg,
+        String.raw`c=\max\left(\left(p-C\right)\cdot N\right)`
+      ),
+      names
+    );
+    expect(roundTrips(cfg, d.root)).toBe(true);
+  });
+
+  const values = new Map<string, Value>([
+    ["T", { type: "number", value: 1 }],
+    ["P", { type: "point", value: [1, 2, 3] }],
+  ]);
+  const push = (
+    latex: string,
+    part: "color" | "restriction",
+    syms: string[]
+  ) => {
+    const tree = pushToGpu(
+      parseRootLatex(cfg, latex),
+      part,
+      new Map(syms.map((s) => [s, values.get(s)!])),
+      "x"
+    );
+    return tree && printLatex(cfg, tree);
+  };
+  test("rebinds changing variables around a color", () => {
+    expect(push(String.raw`c=\min(x-H)`, "color", ["T"])).toBe(
+      String.raw`c=\operatorname{min}\left(x-H\right)\operatorname{with}T=T+0\cdot x`
+    );
+    expect(push(String.raw`c=\min(x-H)`, "color", ["P"])).toBe(
+      String.raw`c=\operatorname{min}\left(x-H\right)\operatorname{with}P=P+0\cdot x\cdot \left(1,1,1\right)`
+    );
+  });
+  test("joins an existing with, but never nests one", () => {
+    expect(push(String.raw`c=a\operatorname{with}a=x`, "color", ["T"])).toBe(
+      String.raw`c=a\operatorname{with}a=x,T=T+0\cdot x`
+    );
+    expect(
+      push(String.raw`c=(a\operatorname{with}a=x)+1`, "color", ["T"])
+    ).toBeUndefined();
+    expect(
+      push(String.raw`c=a\operatorname{with}T=x`, "color", ["T"])
+    ).toBeUndefined();
+  });
+  test("rebinds each side of restrictions and inequalities", () => {
+    expect(push(String.raw`z=0\left\{H>x\right\}`, "restriction", ["T"])).toBe(
+      String.raw`z=0\cdot \left\{\left(H\operatorname{with}T=T+0\cdot x\right)>x\right\}`
+    );
+    expect(push(String.raw`z<H`, "restriction", ["T"])).toBe(
+      String.raw`z<\left(H\operatorname{with}T=T+0\cdot x\right)`
+    );
+    expect(push(String.raw`z=0`, "restriction", ["T"])).toBeUndefined();
   });
 });

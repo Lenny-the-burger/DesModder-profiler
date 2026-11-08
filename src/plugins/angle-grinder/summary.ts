@@ -4,6 +4,9 @@ import type { Measurement, ShaderStat } from "./lab";
 /** Uniform slots a surface's restriction and color function share. */
 export const UNIFORM_BUDGET = 427;
 
+/** Shader cost Desmos allows before it gives up on a shader. */
+export const COST_LIMIT = 10000;
+
 export interface Totals {
   shaders: number;
   uniforms: number;

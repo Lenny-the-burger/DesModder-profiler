@@ -25,7 +25,15 @@ export interface MarkedLatex {
   parts: MarkedPart[];
 }
 
-export interface ExpressionDiff {
+/** What else was done to an expression, besides writing values in. */
+export interface HotChanges {
+  /** Products split so their changing part is folded into one value. */
+  split: number;
+  /** Variables rebound so what they feed is computed in the shader. */
+  gpu: string[];
+}
+
+export interface ExpressionDiff extends HotChanges {
   id: string;
   before: MarkedLatex;
   after: MarkedLatex;
@@ -96,6 +104,7 @@ function marked(
     printed.set(identifierToString(cfg, holder), s);
   });
   const text = printLatex(cfg, substitute(root, holders, new Set()));
+  if (printed.size === 0) return { latex: text, plain: text, parts: [] };
   const pattern = new RegExp(
     [...printed.keys()]
       .map((p) => p.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&"))
@@ -114,23 +123,26 @@ function marked(
 }
 
 /**
- * How `root` changes when the variables in `used` are replaced with their
- * `values`.
+ * How `root` changes into `tree` with the variables in `used` replaced with
+ * their `values`. `tree` is `root` after the rewrites in `hot`.
  */
 export function diffOf(
   cfg: Config,
   id: string,
   root: Aug.Latex.AnyRootOrChild,
   used: Iterable<string>,
-  values: ReadonlyMap<string, Value>
+  values: ReadonlyMap<string, Value>,
+  tree: Aug.Latex.AnyRootOrChild = root,
+  changes: HotChanges = { split: 0, gpu: [] }
 ): ExpressionDiff {
   const symbols = [...used].filter((s) => values.has(s));
   const name = (s: string) =>
     identifierToString(cfg, { type: "Identifier", symbol: s });
   return {
     id,
+    ...changes,
     before: marked(cfg, root, symbols, values, name),
-    after: marked(cfg, root, symbols, values, (s) =>
+    after: marked(cfg, tree, symbols, values, (s) =>
       shortValue(values.get(s)!)
     ),
   };

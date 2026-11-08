@@ -126,6 +126,28 @@ class Changes extends Component<Props> {
                         })
                       }
                     </div>
+                    <If predicate={() => d().split > 0}>
+                      {() => (
+                        <div class="dsm-ag-diff-note">
+                          {() =>
+                            format("angle-grinder-diff-split", {
+                              count: d().split,
+                            })
+                          }
+                        </div>
+                      )}
+                    </If>
+                    <If predicate={() => d().gpu.length > 0}>
+                      {() => (
+                        <div class="dsm-ag-diff-note">
+                          {() =>
+                            format("angle-grinder-diff-gpu", {
+                              names: d().gpu.join(", "),
+                            })
+                          }
+                        </div>
+                      )}
+                    </If>
                     <div class="dsm-ag-diff-lines">
                       <div class="dsm-ag-diff-line dsm-ag-diff-before">
                         <span class="dsm-ag-diff-sign">−</span>
@@ -221,14 +243,42 @@ class Results extends Component<Props> {
             )}
           </For>
         </div>
-        <div class="dsm-ag-note">
-          {() =>
-            format("angle-grinder-summary", {
-              values: result().inlined.length,
-              expressions: result().rewritten.length,
-            })
-          }
-        </div>
+        <If predicate={() => result().inlined.length > 0}>
+          {() => (
+            <div class="dsm-ag-note">
+              {() =>
+                format("angle-grinder-summary", {
+                  values: result().inlined.length,
+                  expressions: result().diffs.filter(
+                    (d) => d.before.parts.length > 0
+                  ).length,
+                })
+              }
+            </div>
+          )}
+        </If>
+        <If predicate={() => result().split.length > 0}>
+          {() => (
+            <div class="dsm-ag-note">
+              {() =>
+                format("angle-grinder-split-summary", {
+                  count: result().split.length,
+                })
+              }
+            </div>
+          )}
+        </If>
+        <If predicate={() => result().pushed.length > 0}>
+          {() => (
+            <div class="dsm-ag-note">
+              {() =>
+                format("angle-grinder-push-summary", {
+                  count: result().pushed.length,
+                })
+              }
+            </div>
+          )}
+        </If>
         <If predicate={() => result().diffs.length > 0}>
           {() => <Changes ag={ag} />}
         </If>
