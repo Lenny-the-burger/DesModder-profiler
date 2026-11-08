@@ -25,6 +25,22 @@ export interface DesmosShader {
   shaderUniforms: number[];
   costEstimate: number;
   dependencies?: string[];
+  /** Counted by the worker; see worker.ts. */
+  dsmInfo?: { baked?: { singles: unknown[]; lists: number[] } };
+}
+
+/**
+ * Changing values written into `shader`'s source because it had no slots
+ * left, which it asks for on top of its uniforms. The worker counts them;
+ * without that count, every number in a full shader's lists is taken to be
+ * one.
+ */
+export function bakedValues(shader: DesmosShader, budget: number): number {
+  const baked = shader.dsmInfo?.baked;
+  if (baked)
+    return baked.singles.length + baked.lists.reduce((n, k) => n + k, 0);
+  if (shader.shaderUniforms.length < budget) return 0;
+  return parseLists(shader.source).reduce((n, l) => n + l.literals, 0);
 }
 
 /** Uniform slots the surface material reserves for itself. */
@@ -190,7 +206,10 @@ export interface MaterialShaders {
 }
 
 export interface MaterialInfo {
-  /** Slots the restriction and color function ask for together. */
+  /**
+   * Slots the restriction and color function ask for together, including
+   * values written in because there were none left.
+   */
   uniforms: number;
   budget: number;
   /**
@@ -229,9 +248,10 @@ export function analyzeMaterial(
     }
     const n = s.shaderUniforms.length;
     const fits = Math.min(n, budget - used);
+    const asked = n + bakedValues(s, budget);
     used += fits;
-    uniforms += n;
-    overflow += n - fits;
+    uniforms += asked;
+    overflow += asked - fits;
     if (n >= budget) full = true;
     key.push(s.source, s.shaderUniforms.slice(fits).join(","));
   }

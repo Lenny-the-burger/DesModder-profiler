@@ -48,6 +48,8 @@ interface Chunk {
 
 interface Emitter {
   chunk: Chunk;
+  shaderUniforms: unknown[];
+  maxUniforms: number;
   __dsmSrc?: Source;
 }
 
@@ -357,6 +359,11 @@ export interface ShaderSourceInfo {
   uniforms: number[];
   /** Frame of each list constant `_Cn`, by n. */
   lists: number[];
+  /**
+   * Changing values written into the source because the shader had no slots
+   * left: the frame of each single value, and how many of each list's.
+   */
+  baked?: { singles: number[]; lists: number[] };
   /** Frame of each instruction, by instruction index. */
   instructions: number[];
   /**
@@ -455,6 +462,12 @@ interface CostTally {
 interface EmitterRecord {
   uniforms: (Source | undefined)[];
   lists: (Source | undefined)[];
+  /** Values written in because the shader had no slots left, by source. */
+  bakedSingles: (Source | undefined)[];
+  /** How many of each list's values were written in that way. */
+  bakedLists: number[];
+  /** Written-in values not yet known to be single values or in a list. */
+  pending: (Source | undefined)[];
 }
 
 interface CostCollection {
@@ -538,8 +551,24 @@ export function createShaderTagger() {
 
   function record(emitter: Emitter) {
     let r = records.get(emitter);
-    if (!r) records.set(emitter, (r = { uniforms: [], lists: [] }));
+    if (!r)
+      records.set(
+        emitter,
+        (r = {
+          uniforms: [],
+          lists: [],
+          bakedSingles: [],
+          bakedLists: [],
+          pending: [],
+        })
+      );
     return r;
+  }
+
+  /** Written-in values before the next constant were single values. */
+  function flushPending(r: EmitterRecord) {
+    r.bakedSingles.push(...r.pending);
+    r.pending = [];
   }
 
   function frameOf(node: ParseNode): Frame | undefined {
@@ -605,13 +634,27 @@ export function createShaderTagger() {
 
     /** The GLSL emitter prints a constant instruction. */
     constant(emitter: Emitter, instr: Instruction) {
+      flushPending(record(emitter));
       emitter.__dsmSrc = instr?.dsmSrc;
     },
     uniform(emitter: Emitter) {
       record(emitter).uniforms.push(emitter.__dsmSrc);
     },
+    /**
+     * The emitter prints a number as a uniform or as a literal. A changing
+     * one (mobility above Cold) is a literal only because the shader has no
+     * slots left.
+     */
+    printed(emitter: Emitter, mobility: number) {
+      if (mobility > 0 && emitter.shaderUniforms.length >= emitter.maxUniforms)
+        record(emitter).pending.push(emitter.__dsmSrc);
+    },
     list(emitter: Emitter) {
-      record(emitter).lists.push(emitter.__dsmSrc);
+      // A list prints its values, then itself.
+      const r = record(emitter);
+      r.lists.push(emitter.__dsmSrc);
+      r.bakedLists[r.lists.length - 1] = r.pending.length;
+      r.pending = [];
     },
 
     /** Run Desmos's cost estimate of the emitter's chunk, recording it. */
@@ -737,6 +780,7 @@ export function createShaderTagger() {
         return n;
       };
       const r = record(emitter);
+      flushPending(r);
       const cost = lastCost?.chunk === chunk ? lastCost : undefined;
       const loops = (ls: WorkerLoop[]): WorkerLoop[] =>
         ls.map((l) => ({
@@ -762,6 +806,10 @@ export function createShaderTagger() {
         frames,
         uniforms: r.uniforms.map(id),
         lists: r.lists.map(id),
+        baked: {
+          singles: r.bakedSingles.map(id),
+          lists: r.lists.map((_, k) => r.bakedLists[k] ?? 0),
+        },
         instructions: chunk.instructions.map((i) => id(i?.dsmSrc)),
         cost: costs,
         loops: cost ? loops(cost.roots) : [],

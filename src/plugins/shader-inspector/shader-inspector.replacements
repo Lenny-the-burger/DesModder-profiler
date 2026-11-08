@@ -94,6 +94,25 @@ self.dsm_shader?.uniform(this);
 let $i = "_DCG_SC_" + this.shaderUniforms.length;
 ```
 
+## Count the values written into a shader that has no slots left
+
+*Description* `Count values written into full shaders, for the shader inspector`
+
+*worker_only*
+
+*Find* => `from`
+```js
+printFloatOrUniformGLSL($r, $n) {
+  let $o = this.shaderUniforms.length;
+```
+
+*Replace* `from` with
+```js
+printFloatOrUniformGLSL($r, $n) {
+  self.dsm_shader?.printed(this, $n);
+  let $o = this.shaderUniforms.length;
+```
+
 ## Record the expression of each shader list
 
 *Description* `Record which expression each shader list comes from`

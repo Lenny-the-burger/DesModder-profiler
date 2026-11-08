@@ -258,7 +258,19 @@ function uniformGroups(
     g.slots += 1 - baked;
     g.baked += baked;
   });
-  if (full)
+  const baked = info?.baked;
+  if (baked) {
+    // The worker counted what was written in, and where it came from.
+    for (const frame of baked.singles) {
+      const origin = originOf(info, frame, owner, resolve);
+      let g = singles.get(origin);
+      if (!g) singles.set(origin, (g = { origin, part, slots: 0, baked: 0 }));
+      g.baked += 1;
+    }
+    baked.lists.forEach((count, k) => {
+      if (count > 0) listGroup(k).baked += count;
+    });
+  } else if (full)
     lists.forEach((l, k) => {
       if (l.literals > 0) listGroup(k).baked += l.literals;
     });

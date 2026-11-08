@@ -315,9 +315,15 @@ export class ShaderInspectorView extends Component<{
           {() => (
             <div class="dsm-si-line dsm-si-dim">
               {() =>
-                format("shader-inspector-cost-short", {
-                  cost: fmt((e().color ?? e().restriction)!.cost),
-                })
+                [
+                  format("shader-inspector-uniforms", {
+                    used: e().material.uniforms,
+                    budget: e().material.budget,
+                  }),
+                  format("shader-inspector-cost-short", {
+                    cost: fmt((e().color ?? e().restriction)!.cost),
+                  }),
+                ].join(" · ")
               }
             </div>
           )}
@@ -629,7 +635,14 @@ export class ShaderInspectorView extends Component<{
       <div class="dsm-si-section">
         <div class="dsm-si-section-head">
           <span>{format("shader-inspector-section-uniforms")}</span>
-          <span class="dsm-si-dim">
+          <span
+            class={() => {
+              const over = [...r().singles, ...r().lists].some(
+                (g) => g.baked > 0
+              );
+              return { "dsm-si-dim": !over, "dsm-si-bad-text": over };
+            }}
+          >
             {() =>
               format("shader-inspector-uniforms-head", {
                 used: [...r().singles, ...r().lists].reduce(
