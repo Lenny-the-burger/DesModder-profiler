@@ -1,6 +1,7 @@
 /**
- * An offscreen 3D calculator for evaluating values and measuring the shaders
- * a graph compiles to, without touching the graph on screen.
+ * An offscreen calculator for evaluating values and measuring the shaders a
+ * graph compiles to, and the evaluator's time on it, without touching the
+ * graph on screen.
  */
 import type { GraphState } from "../../../graph-state";
 import type { Value } from "./rewrite";
@@ -36,7 +37,11 @@ interface LabCalc {
     { isError?: boolean; errorMessage?: string } | undefined
   >;
   controller: {
-    getAllShaders: () => Record<string, Shader | undefined>;
+    getAllShaders?: () => Record<string, Shader | undefined>;
+    dispatcher: {
+      register: (cb: (e: DispatchedEvent) => void) => string;
+      unregister: (id: string) => void;
+    };
     getGrapher3d?: () => Grapher3D | undefined;
     grapher3d?: {
       graphSketches?: Record<
@@ -46,6 +51,13 @@ interface LabCalc {
     };
   };
 }
+
+interface DispatchedEvent {
+  type: string;
+  timingData?: { timeInWorker?: number };
+}
+
+type LabConstructor = (el: HTMLElement, opts: object) => LabCalc;
 
 export interface ShaderStat {
   /** `color:<expression id>` or `restriction:<expression id>:<branch>` */
@@ -59,6 +71,11 @@ export interface Measurement {
   shaders: ShaderStat[];
   /** Error message of each expression that has one, by id. */
   errors: Map<string, string>;
+  /**
+   * Time the evaluator worker spent on the load (compiling, evaluating and
+   * computing graphs), in ms.
+   */
+  workerMs: number;
 }
 
 /** The end of the error message of a shader over the cost limit. */
@@ -96,6 +113,7 @@ export function playingSliders(state: GraphState) {
 
 export class Lab {
   private calc: LabCalc | undefined;
+  private workerMs = 0;
 
   private constructor(private readonly el: HTMLElement) {}
 
@@ -137,12 +155,24 @@ export class Lab {
   async load(state: GraphState, draw?: ReadonlySet<string>, timeout = 180000) {
     this.calc?.destroy();
     const { Desmos } = window as unknown as {
-      Desmos: { Calculator3D: (el: HTMLElement, opts: object) => LabCalc };
+      Desmos: {
+        Calculator3D?: LabConstructor;
+        GraphingCalculator?: LabConstructor;
+        Geometry?: LabConstructor;
+      };
     };
+    const { product } = state.graph;
+    const make =
+      product === "graphing-3d" || state.graph.threeDMode
+        ? Desmos.Calculator3D
+        : product === "geometry-calculator"
+          ? (Desmos.Geometry ?? Desmos.GraphingCalculator)
+          : Desmos.GraphingCalculator;
+    if (!make) throw new Error("No calculator for this kind of graph");
     // No expression list: the lab never shows one, and drawing it while the
     // calculator is still being built can ask for the evaluator before it
     // exists ("reading 'evaluationProgressById'").
-    this.calc = Desmos.Calculator3D(this.el, {
+    this.calc = make(this.el, {
       ignoreCostEstimate: true,
       expressions: false,
     });
@@ -155,8 +185,19 @@ export class Lab {
       grapher.maxFragmentUniformComponents = UNLIMITED_UNIFORMS;
       grapher.getMaxFragmentUniformComponents = () => UNLIMITED_UNIFORMS;
     }
-    this.calc.setState(stopped(state, draw));
-    await this.settle(timeout);
+    let worker = 0;
+    const { dispatcher } = this.calc.controller;
+    const listener = dispatcher.register((e) => {
+      if (e.type === "on-evaluator-changes")
+        worker += e.timingData?.timeInWorker ?? 0;
+    });
+    try {
+      this.calc.setState(stopped(state, draw));
+      await this.settle(timeout);
+    } finally {
+      dispatcher.unregister(listener);
+    }
+    this.workerMs = worker;
   }
 
   /**
@@ -242,7 +283,7 @@ export class Lab {
 
   measure(): Measurement {
     const shaders: ShaderStat[] = [];
-    const all = this.loaded.controller.getAllShaders();
+    const all = this.loaded.controller.getAllShaders?.() ?? {};
     for (const [id, s] of Object.entries(all))
       if (s)
         shaders.push({
@@ -270,6 +311,6 @@ export class Lab {
         const [part, id] = s.key.split(":");
         if (!errors.has(id)) errors.set(id, `${part} ${TOO_COSTLY}`);
       }
-    return { shaders, errors };
+    return { shaders, errors, workerMs: this.workerMs };
   }
 }

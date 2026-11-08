@@ -21,6 +21,7 @@ import { Kind, Names, distribute, kindOf, pushToGpu } from "./hot";
 import { Definitions, hoistRepeats, inlineDefinitions } from "./inline";
 import { foldAffine } from "./affine";
 import { splitPointLists, splitPoints, unrollLists } from "./unpack";
+import { liftGlobals } from "./lift";
 import type { Aug } from "../../../text-mode-core";
 import type { GraphState } from "../../../graph-state";
 import "../../tests/run_calc_for_tests";
@@ -736,5 +737,63 @@ describe("lists of points read by coordinate", () => {
     expect(split("f(P,n)=P[n].x").count).toBe(0);
     // Written-out indices are worked out on the CPU anyway.
     expect(split("a=P[1].x").count).toBe(0);
+  });
+});
+
+describe("passing definitions to functions", () => {
+  const lift = (
+    latex: string[],
+    opts: { fixed?: string[]; small?: string[] } = {}
+  ) => {
+    const trees = new Map(
+      latex.map((l, i) => [String(i + 1), parseRootLatex(cfg, l)])
+    );
+    let n = 0;
+    const r = liftGlobals({
+      trees,
+      fixed: new Set(opts.fixed ?? []),
+      fresh: () => `q_${++n}`,
+      liftable: (g) => !(opts.small ?? []).includes(g),
+    });
+    return latex.map((l, i) => {
+      const t = r.trees.get(String(i + 1));
+      return t ? printLatex(cfg, t).replace(/\\left|\\right|\\ /g, "") : l;
+    });
+  };
+  test("passes a definition read in a body, at every call", () => {
+    const [f, h, y] = lift(["f(a)=H+a", "H=\\sin(x)", "y=f(1)+f(2)"]);
+    expect(f).toBe("f(a,q_{1})=q_{1}+a");
+    expect(h).toBe("H=\\sin(x)");
+    expect(y).toBe("y=f(1,H)+f(2,H)");
+  });
+  test("passes it through the functions that call", () => {
+    const [f, g, , y] = lift(["f(a)=H+a", "g(a)=f(a)+f(2a)", "H=x", "y=g(1)"]);
+    expect(f).toBe("f(a,q_{1})=q_{1}+a");
+    expect(g).toBe("g(a,q_{2})=f(a,q_{2})+f(2\\cdot a,q_{2})");
+    expect(y).toBe("y=g(1,H)");
+  });
+  test("leaves definitions that read the parameters", () => {
+    // `q` reads `p`, so it means something else outside the body.
+    const out = lift(["f(p)=q+1", "q=2p", "y=f(3)"]);
+    expect(out).toEqual(["f(p)=q+1", "q=2p", "y=f(3)"]);
+    // Through another definition, and through a name bound in the body.
+    expect(lift(["f(p)=r", "r=q+1", "q=2p", "y=f(3)"])[0]).toBe("f(p)=r");
+    expect(lift(["f(p)=\\sum_{n=1}^{3}r", "r=n", "y=f(3)"])[0]).toBe(
+      "f(p)=\\sum_{n=1}^{3}r"
+    );
+  });
+  test("leaves functions it can't rewrite every call of", () => {
+    expect(lift(["f(a)=H+a", "H=x", "y=f(1)"], { fixed: ["f"] })[0]).toBe(
+      "f(a)=H+a"
+    );
+    expect(lift(["f(a)=H+a", "H=x", "y=f'(1)"])[0]).toBe("f(a)=H+a");
+    // Recursion.
+    expect(lift(["f(n)=\\{n>0:f(n-1)+H,0\\}", "H=x", "y=f(3)"])[0]).toBe(
+      "f(n)=\\{n>0:f(n-1)+H,0\\}"
+    );
+    // Small values aren't worth it.
+    expect(lift(["f(a)=H+a", "H=1", "y=f(1)"], { small: ["H"] })[0]).toBe(
+      "f(a)=H+a"
+    );
   });
 });

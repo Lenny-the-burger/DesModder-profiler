@@ -39,6 +39,8 @@ export interface HotChanges {
   affine: string[];
   /** Piecewise points taken apart, and loops over short lists written out. */
   unpacked: number;
+  /** Definitions passed to functions as arguments. */
+  lifted?: string[];
 }
 
 export interface ExpressionDiff extends HotChanges {

@@ -173,6 +173,17 @@ class Changes extends Component<Props> {
                         </div>
                       )}
                     </If>
+                    <If predicate={() => (d().lifted?.length ?? 0) > 0}>
+                      {() => (
+                        <div class="dsm-ag-diff-note">
+                          {() =>
+                            format("angle-grinder-diff-lift", {
+                              names: (d().lifted ?? []).join(", "),
+                            })
+                          }
+                        </div>
+                      )}
+                    </If>
                     <If predicate={() => d().unpacked > 0}>
                       {() => (
                         <div class="dsm-ag-diff-note">
@@ -367,6 +378,19 @@ class Results extends Component<Props> {
               {() =>
                 format("angle-grinder-fold-summary", {
                   count: result().folded.length,
+                })
+              }
+            </div>
+          )}
+        </If>
+        <If predicate={() => result().lifted.length > 0}>
+          {() => (
+            <div class="dsm-ag-note">
+              {() =>
+                format("angle-grinder-lift-summary", {
+                  count: result().lifted.length,
+                  before: Math.round(result().workerMs?.before ?? 0),
+                  after: Math.round(result().workerMs?.after ?? 0),
                 })
               }
             </div>

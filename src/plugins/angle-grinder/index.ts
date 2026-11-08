@@ -27,7 +27,8 @@ export type Status =
   | { type: "error"; message: string };
 
 /**
- * Rewrites a 3D graph so Desmos compiles cheaper shaders from it. Values that
+ * Rewrites a graph so Desmos compiles it faster (see lift.ts) and, in 3D,
+ * compiles cheaper shaders from it. Values that
  * don't change are written into the expressions that end up in shaders as
  * typed-in numbers, which Desmos puts in the shader source instead of giving
  * each number a uniform slot. The result is plain graph state that works

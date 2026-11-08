@@ -280,9 +280,7 @@ export default class DSM extends TransparentPlugins {
 
   isPluginForceDisabled(id: PluginID) {
     return (
-      this.forceDisabled.has(id) ||
-      (this.cc.is3dProduct() && id === "GLesmos") ||
-      (!this.cc.is3dProduct() && id === "angle-grinder")
+      this.forceDisabled.has(id) || (this.cc.is3dProduct() && id === "GLesmos")
     );
   }
 

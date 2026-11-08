@@ -20,6 +20,9 @@
  *    changing part into fewer numbers (see `distribute`).
  * 6. Shaders still out of uniform slots compute what they need from the
  *    sliders themselves, if that stays under the cost limit (see `pushToGpu`).
+ * 7. Definitions read in function bodies are passed in as arguments, so
+ *    Desmos compiles them once per expression instead of once per call (see
+ *    lift.ts). Kept only if the evaluator gets faster and values stay the same.
  */
 import type { GraphState } from "../../../graph-state";
 import type { Config } from "../../../text-mode-core";
@@ -38,8 +41,9 @@ import {
 import { foldAffine } from "./affine";
 import { ExpressionDiff, diffOf } from "./diff";
 import { Names, ShaderPart, distribute, pushToGpu } from "./hot";
-import { Hoisted, hoistRepeats, inlineDefinitions } from "./inline";
+import { Hoisted, freeNames, hoistRepeats, inlineDefinitions } from "./inline";
 import { Lab, Measurement, ShaderStat } from "./lab";
+import { liftGlobals } from "./lift";
 import {
   Value,
   printLatex,
@@ -97,6 +101,10 @@ export interface GrindResult {
   split: string[];
   /** Expressions that compute changing values in the shader. */
   pushed: string[];
+  /** Functions given definitions as arguments, and the calls passing them. */
+  lifted: string[];
+  /** Evaluator time to load the graph before and after the lift, in ms. */
+  workerMs?: { before: number; after: number };
   /** How each changed expression changed, in graph order. */
   diffs: ExpressionDiff[];
   /** The expression defining each written-in variable. */
@@ -178,6 +186,66 @@ const byKey = (m: Measurement) => new Map(m.shaders.map((s) => [s.key, s]));
 /** Asks for more slots than Desmos gives it, so the rest are written in. */
 const atCap = (s: ShaderStat) => s.uniforms > UNIFORM_BUDGET;
 
+/** Constants with fewer numbers than this aren't worth passing in. */
+const MIN_LIFTED_NUMBERS = 16;
+/** The lift is kept only if loading gets at least this much faster. */
+const MIN_LIFT_GAIN = 0.1;
+/** Loads of each version measured for the lift. */
+const LIFT_LOADS = 3;
+
+/** Whether two sets of values agree, to rounding. */
+function sameValues(
+  a: ReadonlyMap<string, Value>,
+  b: ReadonlyMap<string, Value>
+): boolean {
+  const close = (x: number, y: number) =>
+    x === y ||
+    (Number.isNaN(x) && Number.isNaN(y)) ||
+    Math.abs(x - y) <= 1e-9 * Math.max(1, Math.abs(x), Math.abs(y));
+  const flat = (v: Value): number[] =>
+    v.type === "number"
+      ? [v.value]
+      : v.type === "list" || v.type === "point"
+        ? v.value
+        : v.value.flat();
+  for (const [k, v] of a) {
+    const w = b.get(k);
+    if (!w || w.type !== v.type) return false;
+    const x = flat(v);
+    const y = flat(w);
+    if (x.length !== y.length || x.some((n, i) => !close(n, y[i])))
+      return false;
+  }
+  return true;
+}
+
+/**
+ * The graph's functions whose name appears in latex that isn't one of the
+ * expressions in `trees` (the ticker, slider bounds, tables, ...), where calls
+ * can't be rewritten.
+ */
+function functionsCalledElsewhere(
+  cfg: Config,
+  state: GraphState,
+  trees: ReadonlyMap<string, Node>,
+  functions: ReadonlyMap<string, unknown>
+): Set<string> {
+  const copy = JSON.parse(JSON.stringify(state)) as GraphState;
+  for (const item of copy.expressions.list)
+    if (item.type === "expression" && trees.has(item.id)) delete item.latex;
+  const text = JSON.stringify(copy);
+  const out = new Set<string>();
+  for (const f of functions.keys()) {
+    const name = JSON.stringify(
+      identifierToString(cfg, { type: "Identifier", symbol: f })
+    ).slice(1, -1);
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp(`(?<![A-Za-z\\\\])${escaped}(?![A-Za-z_])`).test(text))
+      out.add(f);
+  }
+  return out;
+}
+
 /** How an expression is rewritten. */
 interface Edit {
   /** The parsed expression, after the rewrites for changing values. */
@@ -194,6 +262,8 @@ interface Edit {
   unpacked: number;
   split: number;
   gpu: string[];
+  /** Definitions passed to functions as arguments here. */
+  lifted: string[];
 }
 
 const unchanged = (tree: Node): Edit => ({
@@ -205,6 +275,7 @@ const unchanged = (tree: Node): Edit => ({
   unpacked: 0,
   split: 0,
   gpu: [],
+  lifted: [],
 });
 
 export async function grind(
@@ -273,7 +344,10 @@ export async function grind(
 
     progress("rewrite");
     const skipped: Skipped[] = [];
-    const targets = shaderExpressions(a, constants);
+    // Only 3D graphs have shaders; the other passes are for them.
+    const is3d =
+      state.graph.product === "graphing-3d" || !!state.graph.threeDMode;
+    const targets = is3d ? shaderExpressions(a, constants) : [];
     for (const e of targets) {
       const used = new Set<string>();
       substitute(e.root, literals, used);
@@ -749,6 +823,84 @@ export async function grind(
       }
     }
 
+    progress("lift");
+    let workerMs: { before: number; after: number } | undefined;
+    {
+      const trees = new Map<string, Node>();
+      for (const e of a.exprs)
+        if (!e.id.includes(":")) trees.set(e.id, editOf(e).tree);
+      const hoistedIds = new Set<string>();
+      for (const edit of edits.values())
+        for (const h of edit.hoisted) {
+          trees.set(h.id, hoistedDef(h));
+          hoistedIds.add(h.id);
+        }
+      const fixed = functionsCalledElsewhere(cfg, state, trees, functions);
+      const lift = liftGlobals({
+        trees,
+        fixed,
+        fresh: () => fresh().symbol,
+        liftable: (g) => {
+          const e = a.definitions.get(g);
+          if (!e || e.isFunction) return false;
+          const v = values.get(g);
+          // Small values cost next to nothing to compile.
+          return !v || valueSize(v) >= MIN_LIFTED_NUMBERS;
+        },
+      });
+      const tried = new Map<string, Edit>();
+      if (![...lift.trees.keys()].some((id) => hoistedIds.has(id)))
+        for (const [id, tree] of lift.trees) {
+          const e = a.byId.get(id);
+          if (!e) continue;
+          const passed = new Set<string>();
+          if (tree.type === "FunctionDefinition")
+            for (const g of lift.lifted.get(tree.symbol.symbol) ?? [])
+              passed.add(g);
+          for (const f of freeNames(tree))
+            for (const g of lift.lifted.get(f) ?? []) passed.add(g);
+          tried.set(id, { ...editOf(e), tree, lifted: [...passed] });
+        }
+      if (tried.size > 0 && [...tried.values()].every(printsBack)) {
+        trials.push(
+          `lift ${[...lift.lifted].map(([f, gs]) => `${f}(${gs.join(",")})`).join(" ")}`
+        );
+        const current = withLatex(state, allLatex());
+        const next = withLatex(state, allLatex(tried));
+        // Loads vary by tens of percent, and the first ones run slower:
+        // alternate the two and take the best of each.
+        let base = Infinity;
+        let time = Infinity;
+        let m2: Measurement = after;
+        for (let i = 0; i < LIFT_LOADS; i++) {
+          base = Math.min(base, (await measure(current)).workerMs);
+          m2 = await measure(next);
+          time = Math.min(time, m2.workerMs);
+        }
+        trials.push(`  worker ${base.toFixed(0)}ms -> ${time.toFixed(0)}ms`);
+        const was = byKey(after);
+        const shadersOk = m2.shaders.every((n) => {
+          const s = was.get(n.key);
+          return !s || (n.uniforms <= s.uniforms && n.cost <= s.cost);
+        });
+        const errorsOk = newErrorsOf(before, m2).size <= newErrors.size;
+        let same = false;
+        if (errorsOk && shadersOk && time < base * (1 - MIN_LIFT_GAIN)) {
+          const now = await lab.values(defined, latexOf);
+          same = sameValues(values, now);
+          if (!same) trials.push("  values changed");
+        }
+        if (same) {
+          for (const [id, edit] of tried) edits.set(id, edit);
+          after = m2;
+          workerMs = { before: base, after: time };
+        } else {
+          // Leave the lab on the graph as it is.
+          after = await measure(current);
+        }
+      }
+    }
+
     newErrors = newErrorsOf(before, after);
     const latex = allLatex();
     const out = withLatex(state, latex);
@@ -775,6 +927,7 @@ export async function grind(
             hoisted: edit.hoisted.filter((h) => !h.folded).length,
             affine: edit.affine,
             unpacked: edit.unpacked,
+            lifted: edit.lifted,
           }
         )
       );
@@ -831,6 +984,10 @@ export async function grind(
       unpacked: [...edits].filter(([, e]) => e.unpacked > 0).map(([id]) => id),
       split: [...edits].filter(([, e]) => e.split > 0).map(([id]) => id),
       pushed: [...edits].filter(([, e]) => e.gpu.length > 0).map(([id]) => id),
+      lifted: [...edits]
+        .filter(([, e]) => e.lifted.length > 0)
+        .map(([id]) => id),
+      workerMs,
       diffs,
       definedIn: new Map(
         [...inlined].map((s) => [s, a.definitions.get(s)!.id])

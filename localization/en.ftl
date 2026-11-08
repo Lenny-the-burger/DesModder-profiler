@@ -389,8 +389,8 @@ quake-pro-opt-scalarZoomed-desc = Combats perspective distortion by multiplying 
 
 ## Angle Grinder
 angle-grinder-name = Angle Grinder
-angle-grinder-desc = In 3D, rewrites the graph so Desmos compiles cheaper shaders that use fewer uniform slots. The result works without DesModder.
-angle-grinder-intro = Writes values that never change into the expressions behind shaders, so Desmos puts them in the shader source instead of using a uniform slot for each number. Values that do change are folded into fewer numbers where possible, and a shader that still runs out of slots computes them itself from the sliders. Shaders Desmos rejects as too complicated are made cheaper where possible. Every change is checked by compiling the result. The rewritten graph works without DesModder.
+angle-grinder-desc = Rewrites the graph so Desmos compiles it faster and, in 3D, compiles cheaper shaders that use fewer uniform slots. The result works without DesModder.
+angle-grinder-intro = Writes values that never change into the expressions behind shaders, so Desmos puts them in the shader source instead of using a uniform slot for each number. Values that do change are folded into fewer numbers where possible, and a shader that still runs out of slots computes them itself from the sliders. Shaders Desmos rejects as too complicated are made cheaper where possible. In every kind of graph, definitions read inside functions are passed in as arguments, so Desmos compiles them once instead of on every call. Every change is checked by compiling the result. The rewritten graph works without DesModder.
 angle-grinder-varying = What changes
 angle-grinder-varying-help = Checked sliders and draggable points keep working. Unchecked ones are fixed at their current value wherever a shader uses them.
 angle-grinder-freeze-still = Fix still ones
@@ -406,6 +406,7 @@ angle-grinder-step-evaluate = Evaluating values…
 angle-grinder-step-rewrite = Rewriting…
 angle-grinder-step-verify = Compiling the result…
 angle-grinder-step-inline = Writing out functions…
+angle-grinder-step-lift = Passing definitions to functions…
 angle-grinder-step-unpack = Taking points and short lists apart…
 angle-grinder-step-fold = Working out list values ahead of time…
 angle-grinder-step-distribute = Splitting products…
@@ -437,6 +438,10 @@ angle-grinder-unpack-summary = Took points and short lists apart in { $count ->
     [one] 1 expression
    *[other] { $count } expressions
   }: Desmos charges for building points, reading their coordinates and reading list elements, so working with the numbers directly costs less.
+angle-grinder-lift-summary = Passed definitions to functions as arguments in { $count ->
+    [one] 1 expression
+   *[other] { $count } expressions
+  }, so Desmos compiles them once per expression instead of on every call. Loading took the evaluator { $before } ms before and { $after } ms after.
 angle-grinder-split-summary = Split products in { $count ->
     [one] 1 expression
    *[other] { $count } expressions
@@ -459,6 +464,7 @@ angle-grinder-diff-unpack = { $count ->
     [one] Took a piecewise point apart by coordinate, or wrote out a loop over a short list, so the shader works with plain numbers.
    *[other] Took { $count } piecewise points apart by coordinate, or wrote out loops over short lists, so the shader works with plain numbers.
   }
+angle-grinder-diff-lift = Passes { $names } in as arguments, so each is compiled once instead of on every call.
 angle-grinder-diff-gpu = Computes what { $names } feed in the shader, instead of getting it in uniform slots.
 angle-grinder-skipped = { $count ->
     [one] 1 expression was left as it was, because rewriting it changed what it does.
