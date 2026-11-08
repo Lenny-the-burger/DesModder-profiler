@@ -45,6 +45,8 @@ export interface ExpressionDiff extends HotChanges {
   id: string;
   before: MarkedLatex;
   after: MarkedLatex;
+  /** A definition the grind adds, hidden; it has no before. */
+  added?: boolean;
 }
 
 export const marker = (i: number) =>

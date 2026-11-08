@@ -417,6 +417,7 @@ angle-grinder-over-cost = Shaders over the { $limit } cost limit
 angle-grinder-shader-cost = cost { $before } → { $after }
 angle-grinder-shader-color = Color of expression { $n }
 angle-grinder-shader-restriction = Expression { $n }
+angle-grinder-diff-added = New hidden definition
 angle-grinder-summary = Wrote { $values ->
     [one] 1 value
    *[other] { $values } values

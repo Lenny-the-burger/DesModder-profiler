@@ -723,3 +723,45 @@ export function unrollLists<T extends Node>(
   });
   return { root: out, count };
 }
+
+/**
+ * `root` with each element `L[i]` of a list of points, at an index that isn't
+ * a number written out, read as `(L_x[i],L_y[i],L_z[i])` from lists of its
+ * coordinates. Reading `.x` of that is free, where `L[i].x` costs 5 more
+ * than `L_x[i]`, and coordinates not read cost nothing. `coordinates(L, c)`
+ * names the list of coordinate `c` of `L`.
+ */
+export function splitPointLists<T extends Node>(
+  root: T,
+  values: ReadonlyMap<string, Value>,
+  coordinates: (list: string, coordinate: "x" | "y" | "z") => string
+): { root: T; count: number } {
+  let count = 0;
+  const visit = (n: Node, bound: ReadonlySet<string>): Node => {
+    const node = mapChildren(n, bound, (c, b) => visit(c, b) as Child);
+    if (
+      node.type !== "ListAccess" ||
+      node.list.type !== "Identifier" ||
+      bound.has(node.list.symbol) ||
+      node.index.type === "Constant"
+    )
+      return node;
+    const v = values.get(node.list.symbol);
+    if (v?.type !== "points" || (v.value.length !== 2 && v.value.length !== 3))
+      return node;
+    const list = node.list.symbol;
+    count++;
+    return {
+      type: "Seq",
+      parenWrapped: true,
+      args: COORDS.slice(0, v.value.length).map(
+        (c): Child => ({
+          type: "ListAccess",
+          list: identifier(coordinates(list, c)),
+          index: node.index,
+        })
+      ),
+    };
+  };
+  return { root: visit(root, new Set()) as T, count };
+}

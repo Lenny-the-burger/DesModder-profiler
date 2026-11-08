@@ -49,7 +49,7 @@ import {
   valueSize,
 } from "./rewrite";
 import { COST_LIMIT, UNIFORM_BUDGET } from "./summary";
-import { splitPoints, unrollLists } from "./unpack";
+import { splitPointLists, splitPoints, unrollLists } from "./unpack";
 
 type Node = Aug.Latex.AnyRootOrChild;
 
@@ -481,6 +481,57 @@ export async function grind(
         tried.set(e.id, next);
       }
       await keepBetter("unpack", tried);
+
+      // Lists of points still read at changing indices: read their
+      // coordinates from lists of their own, one definition each, shared.
+      const coordinateLists = new Map<string, Hoisted>();
+      const coordinates = (list: string, c: "x" | "y" | "z") => {
+        const key = `${list}.${c}`;
+        let h = coordinateLists.get(key);
+        if (!h) {
+          const f = fresh();
+          h = {
+            ...f,
+            node: {
+              type: "OrderedPairAccess",
+              point: { type: "Identifier", symbol: list },
+              index: c as "x",
+            },
+            folded: true,
+          };
+          coordinateLists.set(key, h);
+          hoistedNames.add(h.symbol);
+        }
+        return h.symbol;
+      };
+      const pointsTried = new Map<string, Edit>();
+      for (const e of targets) {
+        if (e.id.includes(":") || !roundTrips(cfg, e.root)) continue;
+        const edit = editOf(e);
+        const used = new Set<string>();
+        const s = splitPointLists(edit.tree, values, (l, c) => {
+          const sym = coordinates(l, c);
+          used.add(sym);
+          return sym;
+        });
+        if (s.count === 0) continue;
+        const have = new Set(edit.hoisted.map((h) => h.symbol));
+        const next: Edit = {
+          ...edit,
+          tree: s.root,
+          typeIn: true,
+          hoisted: [
+            ...edit.hoisted,
+            ...[...coordinateLists.values()].filter(
+              (h) => used.has(h.symbol) && !have.has(h.symbol)
+            ),
+          ],
+          unpacked: edit.unpacked + s.count,
+        };
+        if (!printsBack(next)) continue;
+        pointsTried.set(e.id, next);
+      }
+      await keepBetter("point lists", pointsTried);
     }
 
     progress("fold");
@@ -728,6 +779,20 @@ export async function grind(
         )
       );
     }
+    // The definitions added, after the expressions, once each.
+    const addedIds = new Set<string>();
+    for (const edit of edits.values())
+      for (const h of edit.hoisted) {
+        if (addedIds.has(h.id)) continue;
+        addedIds.add(h.id);
+        const def = hoistedDef(h);
+        const used = new Set<string>();
+        substitute(def, literals, used);
+        diffs.push({
+          ...diffOf(cfg, h.id, def, used, values),
+          added: true,
+        });
+      }
     // Constants shader expressions still read, and why they stay variables.
     const leftovers: Record<string, string> = {};
     const candidates = new Set(inlineCandidates(a, varying));

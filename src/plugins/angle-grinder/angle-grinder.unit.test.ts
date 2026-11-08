@@ -20,7 +20,7 @@ import { diffOf, shortNumber } from "./diff";
 import { Kind, Names, distribute, kindOf, pushToGpu } from "./hot";
 import { Definitions, hoistRepeats, inlineDefinitions } from "./inline";
 import { foldAffine } from "./affine";
-import { splitPoints, unrollLists } from "./unpack";
+import { splitPointLists, splitPoints, unrollLists } from "./unpack";
 import type { Aug } from "../../../text-mode-core";
 import type { GraphState } from "../../../graph-state";
 import "../../tests/run_calc_for_tests";
@@ -702,5 +702,39 @@ describe("taking points and short lists apart", () => {
       unroll(r`a=\operatorname{total}\left(xw\right)`, r`w=xL`).count
     ).toBe(0);
     expect(unroll(r`a=\sum_{n=1}^{100}nx`).count).toBe(0);
+  });
+});
+
+describe("lists of points read by coordinate", () => {
+  const values = new Map<string, Value>([
+    [
+      "P",
+      {
+        type: "points",
+        value: [
+          [1, 2],
+          [3, 4],
+          [5, 6],
+        ],
+      },
+    ],
+  ]);
+  const split = (latex: string) => {
+    const s = splitPointLists(parseRootLatex(cfg, latex), values, (l, c) =>
+      c === "x" ? "P_x" : c === "y" ? "P_y" : "P_z"
+    );
+    return {
+      latex: printLatex(cfg, s.root).replace(/\\left|\\right/g, ""),
+      count: s.count,
+    };
+  };
+  test("reads elements at changing indices from coordinate lists", () => {
+    expect(split("a=P[n].x+2").latex).toBe(
+      "a=(P_{x}[n],P_{y}[n],P_{z}[n]).x+2"
+    );
+    // A function parameter of the same name is not the list.
+    expect(split("f(P,n)=P[n].x").count).toBe(0);
+    // Written-out indices are worked out on the CPU anyway.
+    expect(split("a=P[1].x").count).toBe(0);
   });
 });

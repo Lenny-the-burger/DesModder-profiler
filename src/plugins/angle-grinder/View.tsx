@@ -133,9 +133,11 @@ class Changes extends Component<Props> {
                       onTap={() => ag().jumpTo(d().id)}
                     >
                       {() =>
-                        format("angle-grinder-shader-restriction", {
-                          n: ag().expressionNumber(d().id),
-                        })
+                        d().added
+                          ? format("angle-grinder-diff-added")
+                          : format("angle-grinder-shader-restriction", {
+                              n: ag().expressionNumber(d().id),
+                            })
                       }
                     </div>
                     <If predicate={() => d().inlined.length > 0}>
@@ -205,16 +207,20 @@ class Changes extends Component<Props> {
                       )}
                     </If>
                     <div class="dsm-ag-diff-lines">
-                      <div class="dsm-ag-diff-line dsm-ag-diff-before">
-                        <span class="dsm-ag-diff-sign">−</span>
-                        <MarkedMath
-                          marked={() => d().before}
-                          renderKey={() => `${d().id}:before`}
-                          partClass={() => "dsm-ag-part-before"}
-                          title={title}
-                          onPick={pick}
-                        />
-                      </div>
+                      <If predicate={() => !d().added}>
+                        {() => (
+                          <div class="dsm-ag-diff-line dsm-ag-diff-before">
+                            <span class="dsm-ag-diff-sign">−</span>
+                            <MarkedMath
+                              marked={() => d().before}
+                              renderKey={() => `${d().id}:before`}
+                              partClass={() => "dsm-ag-part-before"}
+                              title={title}
+                              onPick={pick}
+                            />
+                          </div>
+                        )}
+                      </If>
                       <div class="dsm-ag-diff-line dsm-ag-diff-after">
                         <span class="dsm-ag-diff-sign">+</span>
                         <MarkedMath
