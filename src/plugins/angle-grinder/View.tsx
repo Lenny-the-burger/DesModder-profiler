@@ -126,25 +126,27 @@ class Changes extends Component<Props> {
                         })
                       }
                     </div>
-                    <div class="dsm-ag-diff-line dsm-ag-diff-before">
-                      <span class="dsm-ag-diff-sign">−</span>
-                      <MarkedMath
-                        marked={() => d().before}
-                        renderKey={() => `${d().id}:before`}
-                        partClass={() => "dsm-ag-part-before"}
-                        title={title}
-                        onPick={pick}
-                      />
-                    </div>
-                    <div class="dsm-ag-diff-line dsm-ag-diff-after">
-                      <span class="dsm-ag-diff-sign">+</span>
-                      <MarkedMath
-                        marked={() => d().after}
-                        renderKey={() => `${d().id}:after`}
-                        partClass={() => "dsm-ag-part-after"}
-                        title={title}
-                        onPick={pick}
-                      />
+                    <div class="dsm-ag-diff-lines">
+                      <div class="dsm-ag-diff-line dsm-ag-diff-before">
+                        <span class="dsm-ag-diff-sign">−</span>
+                        <MarkedMath
+                          marked={() => d().before}
+                          renderKey={() => `${d().id}:before`}
+                          partClass={() => "dsm-ag-part-before"}
+                          title={title}
+                          onPick={pick}
+                        />
+                      </div>
+                      <div class="dsm-ag-diff-line dsm-ag-diff-after">
+                        <span class="dsm-ag-diff-sign">+</span>
+                        <MarkedMath
+                          marked={() => d().after}
+                          renderKey={() => `${d().id}:after`}
+                          partClass={() => "dsm-ag-part-after"}
+                          title={title}
+                          onPick={pick}
+                        />
+                      </div>
                     </div>
                   </div>
                 )}

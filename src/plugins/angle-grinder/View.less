@@ -138,12 +138,17 @@
     }
   }
 
+  // Before and after scroll sideways together.
+  .dsm-ag-diff-lines {
+    overflow-x: auto;
+  }
+
   .dsm-ag-diff-line {
     display: flex;
     align-items: baseline;
     gap: 4px;
+    min-width: max-content;
     padding: 2px 4px;
-    overflow-x: auto;
     white-space: nowrap;
   }
 

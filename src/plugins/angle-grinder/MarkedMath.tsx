@@ -41,6 +41,17 @@ function render(el: HTMLElement, props: Props) {
     node.title = props.title(part);
     partOf.set(node, part);
   }
+  // Long expressions scroll sideways; start with the first change in view.
+  const first = partOf.keys().next().value as HTMLElement | undefined;
+  const scroller = el.closest(".dsm-ag-diff-lines");
+  if (first && scroller)
+    requestAnimationFrame(() => {
+      const offset =
+        first.getBoundingClientRect().left -
+        scroller.getBoundingClientRect().left;
+      if (offset > scroller.clientWidth - 40)
+        scroller.scrollLeft = Math.max(scroller.scrollLeft, offset - 40);
+    });
   const press = (e: Event) => {
     e.preventDefault();
     e.stopPropagation();
