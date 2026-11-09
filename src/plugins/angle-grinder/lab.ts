@@ -193,6 +193,24 @@ export class Lab {
    * The value of each variable, if it is a number, a list of numbers, a
    * point, or a list of points. `latexOf` gives the latex of a symbol.
    */
+  /**
+   * How many matrices each symbol holds: a matrix with a list in a cell is a
+   * list of matrices, and reading a cell of it gives a list. Symbols that
+   * aren't readable as matrices are left out.
+   */
+  async matrixLengths(symbols: string[], latexOf: (symbol: string) => string) {
+    const helpers = await this.evaluate(
+      symbols.map((s) => `${latexOf(s)}\\left[1;1\\right]`)
+    );
+    const out = new Map<string, number>();
+    symbols.forEach((s, i) => {
+      const { listValue, numericValue } = helpers[i];
+      if (Array.isArray(listValue)) out.set(s, listValue.length);
+      else if (numericValue !== undefined) out.set(s, 1);
+    });
+    return out;
+  }
+
   async values(
     symbols: string[],
     latexOf: (symbol: string) => string

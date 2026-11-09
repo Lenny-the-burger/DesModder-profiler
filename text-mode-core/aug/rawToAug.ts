@@ -362,6 +362,24 @@ export function parseLatex(cfg: Config, str: string): Aug.Latex.AnyChild {
   return childNodeToTree(res);
 }
 
+/**
+ * `parseRootLatex`, but matrices parse instead of throwing. Text mode has no
+ * syntax for matrices, so `parseRootLatex` keeps rejecting them.
+ */
+export function parseRootLatexWithMatrices(
+  cfg: Config,
+  str: string
+): Aug.Latex.AnyRootOrChild {
+  matricesAllowed = true;
+  try {
+    return parseRootLatex(cfg, str);
+  } finally {
+    matricesAllowed = false;
+  }
+}
+
+let matricesAllowed = false;
+
 export function parseRootLatex(
   cfg: Config,
   str: string
@@ -522,6 +540,26 @@ function childNodeToTree(node: AnyNode): Aug.Latex.AnyChild {
         type: "ListAccess",
         list: childNodeToTree(node.args[0]),
         index: childNodeToTree(node.args[1]),
+      };
+    case "Matrix":
+      if (!matricesAllowed) throw Error("Matrices are not supported");
+      return {
+        type: "Matrix",
+        rows: node.args.map((row) =>
+          row.args.map((cell) =>
+            cell.type === "EmptyCell"
+              ? { type: "Constant", value: 0 }
+              : childNodeToTree(cell)
+          )
+        ),
+      };
+    case "MatrixAccess":
+      if (!matricesAllowed) throw Error("Matrices are not supported");
+      return {
+        type: "MatrixAccess",
+        matrix: childNodeToTree(node.args[0]),
+        row: childNodeToTree(node.args[1]),
+        column: childNodeToTree(node.args[2]),
       };
     case "DotAccess": {
       const prop = childNodeToTree(node.args[1]);

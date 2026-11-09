@@ -16,7 +16,10 @@
  */
 import type { GraphState } from "../../../graph-state";
 import type { Config } from "../../../text-mode-core";
-import { Aug, parseRootLatex } from "../../../text-mode-core";
+import {
+  Aug,
+  parseRootLatexWithMatrices as parseRootLatex,
+} from "../../../text-mode-core";
 
 type Node = Aug.Latex.AnyRootOrChild;
 type Child = Aug.Latex.AnyChild;
@@ -127,6 +130,14 @@ export function forEachChild(
     case "ListAccess":
       f(node.list, bound);
       f(node.index, bound);
+      return;
+    case "Matrix":
+      node.rows.forEach((r) => r.forEach((c) => f(c, bound)));
+      return;
+    case "MatrixAccess":
+      f(node.matrix, bound);
+      f(node.row, bound);
+      f(node.column, bound);
       return;
     case "DotAccess":
       f(node.object, bound);

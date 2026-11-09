@@ -39,6 +39,8 @@ export interface HotChanges {
   affine: string[];
   /** Piecewise points taken apart, and loops over short lists written out. */
   unpacked: number;
+  /** Whether matrix math was worked out element by element. */
+  matrices: boolean;
 }
 
 export interface ExpressionDiff extends HotChanges {
@@ -150,6 +152,7 @@ export function diffOf(
     hoisted: 0,
     affine: [],
     unpacked: 0,
+    matrices: false,
   }
 ): ExpressionDiff {
   const symbols = [...used].filter((s) => values.has(s));

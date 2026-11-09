@@ -90,6 +90,25 @@ function childNodeToStringNoParen(
           ? childNodeToString(cfg, e.index, e)
           : wrapBracket(childNodeToString(cfg, e.index, e)))
       );
+    case "Matrix":
+      return (
+        "\\begin{bmatrix}" +
+        e.rows
+          .map((row) =>
+            row.map((cell) => childNodeToString(cfg, cell, e)).join("&")
+          )
+          .join("\\\\") +
+        "\\end{bmatrix}"
+      );
+    case "MatrixAccess":
+      return (
+        childNodeToString(cfg, e.matrix, e, "list") +
+        wrapBracket(
+          childNodeToString(cfg, e.row, e) +
+            ";" +
+            childNodeToString(cfg, e.column, e)
+        )
+      );
     case "DotAccess":
       return (
         childNodeToString(cfg, e.object, e, "object") +

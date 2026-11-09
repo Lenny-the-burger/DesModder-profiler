@@ -184,6 +184,8 @@ export interface Hoisted {
   id: string;
   symbol: string;
   node: Child;
+  /** Parameters, if this defines a function. */
+  params?: string[];
   /** Part of a value folded out of a comprehension, not a repeat. */
   folded?: boolean;
 }

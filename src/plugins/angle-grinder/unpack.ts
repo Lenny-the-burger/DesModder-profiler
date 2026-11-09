@@ -53,7 +53,7 @@ const COORDS = ["x", "y", "z"] as const;
 const PIXEL = new Set(["x", "y", "z", "u", "v"]);
 
 /** Built-in functions that work on each element of a list on their own. */
-const ELEMENTWISE = new Set([
+export const ELEMENTWISE = new Set([
   "sin",
   "cos",
   "tan",

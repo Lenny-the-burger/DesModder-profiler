@@ -17,6 +17,7 @@ export default function augNeedsParens(
     case "Integral":
       return path === "integrand" && power(node) <= POWERS.add;
     case "ListAccess":
+    case "MatrixAccess":
       // weird, index is not threshold
       return path === "list" && power(node) < POWERS.power;
     case "DotAccess":
@@ -47,6 +48,7 @@ export default function augNeedsParens(
     // List of things, including function args
     case "FunctionCall":
     case "Seq":
+    case "Matrix":
     case "Prime":
     case "Visualization":
     case "List":
@@ -164,7 +166,10 @@ function power(node: Aug.Latex.AnyChild): number {
     case "Prime":
     case "Norm":
       return POWERS.call;
+    case "Matrix":
+      return POWERS.atom;
     case "ListAccess":
+    case "MatrixAccess":
     case "DotAccess":
     case "OrderedPairAccess":
       return POWERS.index;

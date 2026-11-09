@@ -6,6 +6,7 @@ export {
   rawToAugSettings,
   rawToDsmMetadata,
   parseRootLatex,
+  parseRootLatexWithMatrices,
 } from "./aug/rawToAug";
 export type { ProgramAnalysis } from "./ProgramAnalysis";
 export { parse as parseText } from "./down/textToAST";

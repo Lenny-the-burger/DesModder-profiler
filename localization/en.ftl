@@ -407,6 +407,7 @@ angle-grinder-step-rewrite = Rewriting…
 angle-grinder-step-verify = Compiling the result…
 angle-grinder-step-inline = Writing out functions…
 angle-grinder-step-unpack = Taking points and short lists apart…
+angle-grinder-step-matrix = Working out matrix math by hand…
 angle-grinder-step-fold = Working out list values ahead of time…
 angle-grinder-step-distribute = Splitting products…
 angle-grinder-step-push = Moving work into shaders…
@@ -437,6 +438,10 @@ angle-grinder-unpack-summary = Took points and short lists apart in { $count ->
     [one] 1 expression
    *[other] { $count } expressions
   }: Desmos charges for building points, reading their coordinates and reading list elements, so working with the numbers directly costs less.
+angle-grinder-matrix-summary = Worked out matrix math number by number in { $count ->
+    [one] 1 expression
+   *[other] { $count } expressions
+  }: each matrix element is read once per list element, and shared values are computed once, so the shader costs less.
 angle-grinder-split-summary = Split products in { $count ->
     [one] 1 expression
    *[other] { $count } expressions
@@ -445,6 +450,7 @@ angle-grinder-push-summary = { $count ->
     [one] 1 shader that ran out of slots now computes
    *[other] { $count } shaders that ran out of slots now compute
   } what they need from the sliders, at a higher cost.
+angle-grinder-diff-matrix = Works out this matrix math number by number, reading each matrix element once per list element.
 angle-grinder-diff-split = { $count ->
     [one] Split a product, so its changing part is folded into fewer numbers.
    *[other] Split { $count } products, so their changing parts are folded into fewer numbers.

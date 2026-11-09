@@ -184,6 +184,13 @@ class Changes extends Component<Props> {
                         </div>
                       )}
                     </If>
+                    <If predicate={() => d().matrices}>
+                      {() => (
+                        <div class="dsm-ag-diff-note">
+                          {() => format("angle-grinder-diff-matrix")}
+                        </div>
+                      )}
+                    </If>
                     <If predicate={() => d().split > 0}>
                       {() => (
                         <div class="dsm-ag-diff-note">
@@ -378,6 +385,17 @@ class Results extends Component<Props> {
               {() =>
                 format("angle-grinder-unpack-summary", {
                   count: result().unpacked.length,
+                })
+              }
+            </div>
+          )}
+        </If>
+        <If predicate={() => result().matrices.length > 0}>
+          {() => (
+            <div class="dsm-ag-note">
+              {() =>
+                format("angle-grinder-matrix-summary", {
+                  count: result().matrices.length,
                 })
               }
             </div>

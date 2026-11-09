@@ -3,7 +3,7 @@
  * it draws the same. The result is plain graph state that works without
  * DesModder.
  *
- * Six passes, each measured by compiling the result in an offscreen
+ * Seven passes, each measured by compiling the result in an offscreen
  * calculator, which also compiles shaders Desmos would reject for their cost:
  *
  * 1. Values that don't change are typed into the expressions that end up in
@@ -14,11 +14,13 @@
  * 3. Piecewises of points are taken apart by coordinate, and loops and
  *    reductions over short lists that don't change are written out, which
  *    Desmos's cost estimate charges less for (see unpack.ts).
- * 4. Shaders over the cost limit get values that are affine in the pixel
+ * 4. Shaders over the cost limit that do matrix math work it out number by
+ *    number, once per list element (see matrix.ts).
+ * 5. Shaders over the cost limit get values that are affine in the pixel
  *    folded out of their list comprehensions (see affine.ts).
- * 5. Products of a changing value and a sum are split when that folds the
+ * 6. Products of a changing value and a sum are split when that folds the
  *    changing part into fewer numbers (see `distribute`).
- * 6. Shaders still out of uniform slots compute what they need from the
+ * 7. Shaders still out of uniform slots compute what they need from the
  *    sliders themselves, if that stays under the cost limit (see `pushToGpu`).
  */
 import type { GraphState } from "../../../graph-state";
@@ -40,6 +42,7 @@ import { ExpressionDiff, diffOf } from "./diff";
 import { Names, ShaderPart, distribute, pushToGpu } from "./hot";
 import { Hoisted, hoistRepeats, inlineDefinitions } from "./inline";
 import { Lab, Measurement, ShaderStat } from "./lab";
+import { matrixNames, scalarize, usesMatrix } from "./matrix";
 import {
   Value,
   printLatex,
@@ -93,6 +96,8 @@ export interface GrindResult {
   folded: string[];
   /** Expressions with piecewise points taken apart or short lists unrolled. */
   unpacked: string[];
+  /** Expressions with matrix math worked out number by number. */
+  matrices: string[];
   /** Expressions with products split. */
   split: string[];
   /** Expressions that compute changing values in the shader. */
@@ -166,11 +171,21 @@ function shaderSource(s: ShaderStat): { id: string; part: ShaderPart } {
 }
 
 /** The definition a hoisted part becomes. */
-const hoistedDef = (h: Hoisted): Aug.Latex.Assignment => ({
-  type: "Assignment",
-  left: { type: "Identifier", symbol: h.symbol },
-  right: h.node,
-});
+const hoistedDef = (
+  h: Hoisted
+): Aug.Latex.Assignment | Aug.Latex.FunctionDefinition =>
+  h.params
+    ? {
+        type: "FunctionDefinition",
+        symbol: { type: "Identifier", symbol: h.symbol },
+        argSymbols: h.params.map((symbol) => ({ type: "Identifier", symbol })),
+        definition: h.node,
+      }
+    : {
+        type: "Assignment",
+        left: { type: "Identifier", symbol: h.symbol },
+        right: h.node,
+      };
 
 /** Shader stats by key. */
 const byKey = (m: Measurement) => new Map(m.shaders.map((s) => [s.key, s]));
@@ -192,6 +207,8 @@ interface Edit {
   affine: string[];
   /** Piecewise points taken apart, and loops over short lists written out. */
   unpacked: number;
+  /** Whether matrix math was worked out number by number. */
+  matrices: boolean;
   split: number;
   gpu: string[];
 }
@@ -203,6 +220,7 @@ const unchanged = (tree: Node): Edit => ({
   hoisted: [],
   affine: [],
   unpacked: 0,
+  matrices: false,
   split: 0,
   gpu: [],
 });
@@ -534,6 +552,43 @@ export async function grind(
       await keepBetter("point lists", pointsTried);
     }
 
+    progress("matrix");
+    {
+      const over = new Map<string, Edit>();
+      for (const s of after.shaders) {
+        if (s.cost <= COST_LIMIT) continue;
+        const { id, part } = shaderSource(s);
+        const e = a.byId.get(id);
+        if (part !== "color" || !e || e.id.includes(":")) continue;
+        if (![...closure(id)].some((c) => usesMatrix(a.byId.get(c)?.root)))
+          continue;
+        if (roundTrips(cfg, e.root)) over.set(id, editOf(e));
+      }
+      if (over.size > 0) {
+        const names = matrixNames({ variables, functions });
+        const lengths = await lab.matrixLengths(names, latexOf);
+        const tried = new Map<string, Edit>();
+        for (const [id, edit] of over) {
+          const s = scalarize(
+            edit.tree,
+            { variables, functions, values, lengths },
+            fresh
+          );
+          if (!s) continue;
+          for (const h of s.added) hoistedNames.add(h.symbol);
+          const next: Edit = {
+            ...edit,
+            tree: s.root,
+            hoisted: [...edit.hoisted, ...s.added],
+            matrices: true,
+          };
+          if (!printsBack(next)) continue;
+          tried.set(id, next);
+        }
+        await keepBetter("matrix", tried);
+      }
+    }
+
     progress("fold");
     {
       const tried = new Map<string, Edit>();
@@ -775,6 +830,7 @@ export async function grind(
             hoisted: edit.hoisted.filter((h) => !h.folded).length,
             affine: edit.affine,
             unpacked: edit.unpacked,
+            matrices: edit.matrices,
           }
         )
       );
@@ -829,6 +885,7 @@ export async function grind(
         .filter(([, e]) => e.affine.length > 0)
         .map(([id]) => id),
       unpacked: [...edits].filter(([, e]) => e.unpacked > 0).map(([id]) => id),
+      matrices: [...edits].filter(([, e]) => e.matrices).map(([id]) => id),
       split: [...edits].filter(([, e]) => e.split > 0).map(([id]) => id),
       pushed: [...edits].filter(([, e]) => e.gpu.length > 0).map(([id]) => id),
       diffs,

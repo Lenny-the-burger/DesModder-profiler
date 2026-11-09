@@ -30,6 +30,8 @@ export type AnyChild =
   | List
   | Range
   | ListAccess
+  | Matrix
+  | MatrixAccess
   | DotAccess
   | OrderedPairAccess
   | Seq
@@ -164,6 +166,20 @@ export interface ListAccess {
   type: "ListAccess";
   list: AnyChild;
   index: AnyChild;
+}
+
+export interface Matrix {
+  // Parsed only by `parseRootLatexWithMatrices`. A blank cell is 0.
+  type: "Matrix";
+  rows: AnyChild[][];
+}
+
+export interface MatrixAccess {
+  // "M[1;2]"
+  type: "MatrixAccess";
+  matrix: AnyChild;
+  row: AnyChild;
+  column: AnyChild;
 }
 
 export interface DotAccess {

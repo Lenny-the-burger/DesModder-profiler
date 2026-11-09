@@ -1,7 +1,9 @@
 import {
   buildConfigFromGlobals,
   parseRootLatex,
+  parseRootLatexWithMatrices,
 } from "../../../text-mode-core";
+import { scalarize } from "./matrix";
 import {
   analyzeGraph,
   inlineCandidates,
@@ -736,5 +738,71 @@ describe("lists of points read by coordinate", () => {
     expect(split("f(P,n)=P[n].x").count).toBe(0);
     // Written-out indices are worked out on the CPU anyway.
     expect(split("a=P[1].x").count).toBe(0);
+  });
+});
+
+describe("matrices", () => {
+  const r = String.raw;
+  const M = r`M=\begin{bmatrix}a&2\\3&4\end{bmatrix}`;
+  const s = r`s=M\cdot\begin{bmatrix}x\\1\end{bmatrix}`;
+  const parse = (latex: string) => {
+    const root = parseRootLatexWithMatrices(cfg, latex);
+    if (root.type !== "Assignment") throw new Error("not a definition");
+    return root;
+  };
+  const defs = new Map(
+    [M, s].map(parse).map((d) => [d.left.symbol, d.right] as const)
+  );
+  const grind = (latex: string) => {
+    let i = 0;
+    const out = scalarize(
+      parse(latex),
+      {
+        variables: defs,
+        functions: new Map(),
+        values: new Map(),
+        lengths: new Map([["M", 3]]),
+      },
+      () => ({ id: `n${++i}`, symbol: `G_rind${i}` })
+    );
+    return (
+      out && {
+        latex: printLatex(cfg, out.root),
+        added: out.added.map((h) => printLatex(cfg, h.node)),
+      }
+    );
+  };
+
+  test("text mode still rejects them, and they print back", () => {
+    expect(() => parseRootLatex(cfg, M)).toThrow();
+    expect(() => parseRootLatex(cfg, "a=M[1;2]")).toThrow();
+    expect(roundTrips(cfg, parse(M))).toBe(true);
+    expect(roundTrips(cfg, parse("a=M[1;2]+1"))).toBe(true);
+    expect(
+      roundTrips(cfg, parse(r`M=\begin{bmatrix}1&\\&4\end{bmatrix}`))
+    ).toBe(true);
+  });
+
+  test("reads only the cells used, once per element", () => {
+    const g = grind(
+      r`c=\operatorname{hsv}(0,0,\operatorname{total}(\{s[1;1]\ge0,0\}\{s[1;1]\le1,0\}))`
+    )!;
+    expect(g.latex).not.toContain("bmatrix");
+    const cells = g.added.filter((l) => l.includes("M"));
+    expect(cells.map((l) => l.replace(/\\left|\\right/g, ""))).toEqual([
+      "M[1;1]",
+      "M[1;2]",
+    ]);
+    const loop = g.added.find((l) => l.includes("\\operatorname{for}"))!;
+    expect(loop).toContain("\\operatorname{total}");
+    expect(loop).toContain(".\\operatorname{count}");
+  });
+
+  test("leaves alone what it can't take apart", () => {
+    expect(
+      grind(
+        r`c=\operatorname{hsv}(0,0,\operatorname{total}(\operatorname{erf}(s[1;1])+\operatorname{join}(x)))`
+      )
+    ).toBeUndefined();
   });
 });

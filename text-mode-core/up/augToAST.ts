@@ -651,6 +651,10 @@ export function childLatexToAST(e: Aug.Latex.AnyChild): TextAST.Expression {
       };
     case "AssignmentExpression":
       return assignmentExprToAST(e);
+    case "Matrix":
+    case "MatrixAccess":
+      // Only `parseRootLatexWithMatrices` makes these.
+      throw new Error("Programming Error: text mode has no matrix syntax");
     default:
       e satisfies never;
       throw new Error(

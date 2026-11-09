@@ -5,7 +5,7 @@ import type { Config } from "../../../text-mode-core";
 import {
   Aug,
   latexTreeToString,
-  parseRootLatex,
+  parseRootLatexWithMatrices as parseRootLatex,
 } from "../../../text-mode-core";
 
 type Node = Aug.Latex.AnyRootOrChild;
@@ -164,6 +164,17 @@ export function mapChildren<T extends Node>(
       break;
     case "ListAccess":
       out = { ...m, list: c(m.list), index: c(m.index) };
+      break;
+    case "Matrix":
+      out = { ...m, rows: m.rows.map((r) => r.map((x) => c(x))) };
+      break;
+    case "MatrixAccess":
+      out = {
+        ...m,
+        matrix: c(m.matrix),
+        row: c(m.row),
+        column: c(m.column),
+      };
       break;
     case "DotAccess":
       out = {
