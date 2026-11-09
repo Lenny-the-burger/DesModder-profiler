@@ -236,6 +236,29 @@ export interface ListAccess extends Expression {
   index: ChildExprNode;
 }
 
+export interface MatrixAccess extends Expression {
+  // "M[1;2]"
+  type: "MatrixAccess";
+  args: [ChildExprNode, ChildExprNode, ChildExprNode];
+}
+
+export interface EmptyCell extends Expression {
+  // A cell left blank in a matrix; it is 0.
+  type: "EmptyCell";
+  args: [];
+}
+
+export interface MatrixRow extends Expression {
+  type: "MatrixRow";
+  args: (ChildExprNode | EmptyCell)[];
+}
+
+export interface Matrix extends Expression {
+  // "\\begin{bmatrix}1&2\\\\3&4\\end{bmatrix}"
+  type: "Matrix";
+  args: MatrixRow[];
+}
+
 export interface BareSeq extends Expression {
   // "1,2"
   type: "BareSeq";
@@ -661,6 +684,8 @@ export type ChildExprNode =
   | List
   | Range
   | ListAccess
+  | Matrix
+  | MatrixAccess
   | BareSeq
   | ParenSeq
   | UpdateRule

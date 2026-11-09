@@ -32,6 +32,7 @@ import BetterNavigation from "./better-navigation";
 import QuakePro from "./quake-pro";
 import Profiler from "./profiler";
 import ShaderInspector from "./shader-inspector";
+import AngleGrinder from "./angle-grinder";
 import OverrideKeystroke from "../core-plugins/override-keystroke";
 import { DispatchedEvent } from "src/globals/extra-actions";
 import ScrollBeyond from "./scroll-beyond";
@@ -170,6 +171,7 @@ export const keyToPlugin = {
   quakePro: QuakePro,
   profiler: Profiler,
   shaderInspector: ShaderInspector,
+  angleGrinder: AngleGrinder,
 } satisfies Record<string, Plugin<any>>;
 
 export const pluginList = Object.values(keyToPlugin);
@@ -229,6 +231,7 @@ export class TransparentPlugins implements KeyToPluginInstance {
   get quakePro () { return this.ep["quake-pro"]; }
   get profiler () { return this.ep["profiler"]; }
   get shaderInspector () { return this.ep["shader-inspector"]; }
+  get angleGrinder () { return this.ep["angle-grinder"]; }
 }
 
 export type IDToPluginSettings = {

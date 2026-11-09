@@ -641,3 +641,106 @@ shader-inspector-flame-empty = Nothing in this shader adds to this.
 shader-inspector-flame-hint = Hover over a bar to see what it adds. Click it to zoom in and see it in detail; Esc zooms back out.
 shader-inspector-show-compiled = Show compiled code
 shader-inspector-hide-compiled = Hide compiled code
+
+## Angle Grinder
+angle-grinder-name = Angle Grinder
+angle-grinder-desc = In 3D, rewrites the graph so Desmos compiles cheaper shaders that use fewer uniform slots. The result works without DesModder.
+angle-grinder-intro = Writes values that never change into the expressions behind shaders, so Desmos puts them in the shader source instead of using a uniform slot for each number. Values that do change are folded into fewer numbers where possible, and a shader that still runs out of slots computes them itself from the sliders. Shaders Desmos rejects as too complicated are made cheaper where possible. Every change is checked by compiling the result. The rewritten graph works without DesModder.
+angle-grinder-varying = What changes
+angle-grinder-varying-help = Checked sliders and draggable points keep working. Unchecked ones are fixed at their current value wherever a shader uses them.
+angle-grinder-freeze-still = Fix still ones
+angle-grinder-vary-all = Keep all
+angle-grinder-no-sliders = No sliders or draggable points.
+angle-grinder-tag-action = set by an action
+angle-grinder-tag-playing = playing
+angle-grinder-run = Grind
+angle-grinder-running = Grinding…
+angle-grinder-step-analyze = Reading expressions…
+angle-grinder-step-measure = Compiling the graph as it is…
+angle-grinder-step-evaluate = Evaluating values…
+angle-grinder-step-rewrite = Rewriting…
+angle-grinder-step-verify = Compiling the result…
+angle-grinder-step-inline = Writing out functions…
+angle-grinder-step-unpack = Taking points and short lists apart…
+angle-grinder-step-matrix = Working out matrix math by hand…
+angle-grinder-step-fold = Working out list values ahead of time…
+angle-grinder-step-distribute = Splitting products…
+angle-grinder-step-push = Moving work into shaders…
+angle-grinder-uniforms = Uniform slots, all shaders
+angle-grinder-at-limit = Shaders over the { $budget } slot limit
+angle-grinder-max-cost = Highest shader cost
+angle-grinder-over-cost = Shaders over the { $limit } cost limit
+angle-grinder-shader-cost = cost { $before } → { $after }
+angle-grinder-shader-color = Color of expression { $n }
+angle-grinder-shader-restriction = Expression { $n }
+angle-grinder-diff-added = New hidden definition
+angle-grinder-summary = Wrote { $values ->
+    [one] 1 value
+   *[other] { $values } values
+  } into { $expressions ->
+    [one] 1 expression
+   *[other] { $expressions } expressions
+  }.
+angle-grinder-inline-summary = Wrote function calls and definitions out in { $count ->
+    [one] 1 expression
+   *[other] { $count } expressions
+  }, so values they read more than once take uniform slots once.
+angle-grinder-fold-summary = Worked out values in lists ahead of time in { $count ->
+    [one] 1 expression
+   *[other] { $count } expressions
+  }: values that change linearly with position are computed once per element instead of for every pixel, so the shader costs less.
+angle-grinder-unpack-summary = Took points and short lists apart in { $count ->
+    [one] 1 expression
+   *[other] { $count } expressions
+  }: Desmos charges for building points, reading their coordinates and reading list elements, so working with the numbers directly costs less.
+angle-grinder-matrix-summary = Worked out matrix math number by number in { $count ->
+    [one] 1 expression
+   *[other] { $count } expressions
+  }: each matrix element is read once per list element, and shared values are computed once, so the shader costs less.
+angle-grinder-split-summary = Split products in { $count ->
+    [one] 1 expression
+   *[other] { $count } expressions
+  }, so what changes is folded into fewer numbers.
+angle-grinder-push-summary = { $count ->
+    [one] 1 shader that ran out of slots now computes
+   *[other] { $count } shaders that ran out of slots now compute
+  } what they need from the sliders, at a higher cost.
+angle-grinder-diff-matrix = Works out this matrix math number by number, reading each matrix element once per list element.
+angle-grinder-diff-split = { $count ->
+    [one] Split a product, so its changing part is folded into fewer numbers.
+   *[other] Split { $count } products, so their changing parts are folded into fewer numbers.
+  }
+angle-grinder-diff-inline = Wrote out { $names } here, so the values they read share uniform slots.
+angle-grinder-diff-hoist = { $count ->
+    [one] Moved a repeated part into a new definition, so it takes uniform slots once.
+   *[other] Moved { $count } repeated parts into new definitions, so each takes uniform slots once.
+  }
+angle-grinder-diff-fold = Works out { $names } once per element ahead of time, since they change linearly with position, instead of for every pixel.
+angle-grinder-diff-unpack = { $count ->
+    [one] Took a piecewise point apart by coordinate, or wrote out a loop over a short list, so the shader works with plain numbers.
+   *[other] Took { $count } piecewise points apart by coordinate, or wrote out loops over short lists, so the shader works with plain numbers.
+  }
+angle-grinder-diff-gpu = Computes what { $names } feed in the shader, instead of getting it in uniform slots.
+angle-grinder-skipped = { $count ->
+    [one] 1 expression was left as it was, because rewriting it changed what it does.
+   *[other] { $count } expressions were left as they were, because rewriting them changed what they do.
+  }
+angle-grinder-new-errors = { $count ->
+    [one] 1 expression has an error it didn't have before. Don't apply this.
+   *[other] { $count } expressions have errors they didn't have before. Don't apply this.
+  }
+angle-grinder-changes = { $count ->
+    [one] 1 changed expression
+   *[other] { $count } changed expressions
+  }
+angle-grinder-show = Show
+angle-grinder-hide = Hide
+angle-grinder-changes-help = Highlighted variables were replaced by their values. Values are shown rounded, with long lists shortened; the graph gets them in full. Click a value to go to its definition.
+angle-grinder-diff-part = { $count ->
+    [one] 1 number
+   *[other] { $count } numbers
+  }. Click to go to its definition.
+angle-grinder-apply = Apply to graph
+angle-grinder-apply-help = Treat the result as compiled output: keep a copy of the graph as it is now to edit, and grind it again after changing it.
+angle-grinder-applied = Applied. Undo or Restore puts the graph back.
+angle-grinder-restore = Restore

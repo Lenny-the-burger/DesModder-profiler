@@ -52,6 +52,7 @@ const categoryPlugins: Record<string, PluginID[]> = {
     "code-golf",
     "better-navigation",
     "shader-inspector",
+    "angle-grinder",
   ],
   visual: [
     "set-primary-color",

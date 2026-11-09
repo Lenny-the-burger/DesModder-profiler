@@ -282,7 +282,8 @@ export default class DSM extends TransparentPlugins {
     return (
       this.forceDisabled.has(id) ||
       (this.cc.is3dProduct() && id === "GLesmos") ||
-      (!this.cc.is3dProduct() && id === "shader-inspector")
+      (!this.cc.is3dProduct() && id === "shader-inspector") ||
+      (!this.cc.is3dProduct() && id === "angle-grinder")
     );
   }
 

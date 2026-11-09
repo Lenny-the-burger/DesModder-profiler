@@ -1,0 +1,203 @@
+.dcg-container .dsm-pillbox-popover:has(.dsm-angle-grinder) {
+  width: 340px;
+  max-width: calc(100vw - 80px);
+}
+
+.dsm-angle-grinder {
+  max-height: 75vh;
+  overflow-y: auto;
+
+  .dsm-ag-help {
+    color: #666;
+    font-size: 0.9em;
+    margin: 4px 0 8px;
+  }
+
+  .dsm-ag-section {
+    margin: 10px 0;
+  }
+
+  .dsm-ag-section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  .dsm-ag-heading {
+    font-weight: bold;
+    flex: 1;
+  }
+
+  .dsm-ag-link {
+    color: #2f72dc;
+    cursor: pointer;
+    font-size: 0.9em;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  .dsm-ag-sliders {
+    max-height: 220px;
+    overflow-y: auto;
+  }
+
+  .dsm-ag-slider {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 0;
+  }
+
+  .dsm-ag-tag {
+    color: #888;
+    font-size: 0.85em;
+    cursor: pointer;
+  }
+
+  .dsm-ag-empty {
+    color: #888;
+    font-style: italic;
+  }
+
+  .dsm-ag-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 0;
+
+    .dsm-btn {
+      margin: 0;
+    }
+  }
+
+  .dsm-ag-step {
+    color: #666;
+    font-size: 0.9em;
+  }
+
+  .dsm-ag-totals {
+    border-collapse: collapse;
+    width: 100%;
+
+    td {
+      padding: 1px 4px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    td:first-child {
+      padding-left: 0;
+      width: 100%;
+    }
+
+    .dsm-ag-after {
+      font-weight: bold;
+      text-align: right;
+    }
+  }
+
+  .dsm-ag-shaders {
+    margin-top: 6px;
+    max-height: 160px;
+    overflow-y: auto;
+  }
+
+  .dsm-ag-shader {
+    display: flex;
+    justify-content: space-between;
+    cursor: pointer;
+    font-size: 0.9em;
+    padding: 1px 0;
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.05);
+    }
+  }
+
+  .dsm-ag-shader-cost {
+    color: #888;
+    white-space: nowrap;
+  }
+
+  .dsm-ag-shader-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .dsm-ag-diffs {
+    max-height: 320px;
+    overflow-y: auto;
+  }
+
+  .dsm-ag-diff {
+    margin: 6px 0;
+  }
+
+  .dsm-ag-diff-name {
+    color: #2f72dc;
+    cursor: pointer;
+    font-size: 0.9em;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  .dsm-ag-diff-note {
+    color: #666;
+    font-size: 0.85em;
+    margin: 1px 0 2px;
+  }
+
+  // Before and after scroll sideways together.
+  .dsm-ag-diff-lines {
+    overflow-x: auto;
+  }
+
+  .dsm-ag-diff-line {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    min-width: max-content;
+    padding: 2px 4px;
+    white-space: nowrap;
+  }
+
+  .dsm-ag-diff-before {
+    background: rgba(199, 68, 64, 0.06);
+  }
+
+  .dsm-ag-diff-after {
+    background: rgba(56, 140, 70, 0.06);
+  }
+
+  .dsm-ag-diff-sign {
+    color: #888;
+    flex: none;
+    font-family: monospace;
+  }
+
+  .dsm-ag-part {
+    cursor: pointer;
+    border-radius: 2px;
+  }
+
+  .dsm-ag-part-before {
+    background: rgba(199, 68, 64, 0.25);
+  }
+
+  .dsm-ag-part-after {
+    background: rgba(56, 140, 70, 0.25);
+  }
+
+  .dsm-ag-note {
+    margin-top: 6px;
+    font-size: 0.9em;
+  }
+
+  .dsm-ag-warning {
+    margin-top: 6px;
+    color: #c74440;
+    font-size: 0.9em;
+  }
+}
