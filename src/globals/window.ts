@@ -8,6 +8,7 @@ import {
   ExpressionIconViewComponent,
   ExpressionFooterViewComponent,
   InlineMathInputViewComponent,
+  MathQuillConfig,
   MathQuillField,
   MathQuillViewComponent,
   SegmentedControlComponent,
@@ -47,7 +48,10 @@ interface Desmos extends DesmosPublic {
   };
   MathQuill: {
     getApiInstanceForElement: (el: Element) => null | MathQuillApi;
-    StaticMath: (el: Element) => MathQuillApi & {
+    StaticMath: (
+      el: Element,
+      config?: MathQuillConfig
+    ) => MathQuillApi & {
       latex: ((latex: string) => void) & (() => string);
     };
   };

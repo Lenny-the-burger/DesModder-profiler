@@ -9,7 +9,8 @@ export default class StaticMathquillView extends Component<{
     return (
       <DStaticMathquillView
         latex={() => this.props.latex()}
-        config={() => this.props.config?.() ?? {}}
+        // MathQuill renders nothing for LaTeX with a matrix unless told to.
+        config={() => ({ matrices: true, ...this.props.config?.() })}
       />
     );
   }

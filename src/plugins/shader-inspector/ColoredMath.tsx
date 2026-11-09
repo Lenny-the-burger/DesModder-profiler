@@ -70,7 +70,7 @@ function render(el: HTMLElement, colored: ColoredLatex) {
   // math, so it goes in an inner element and this one takes presses first.
   const inner = document.createElement("span");
   el.appendChild(inner);
-  const mq = window.Desmos.MathQuill.StaticMath(inner);
+  const mq = window.Desmos.MathQuill.StaticMath(inner, { matrices: true });
   mq.latex(colored.latex);
   if (mq.latex() === "" && colored.latex !== "") {
     mq.latex(colored.plain);
