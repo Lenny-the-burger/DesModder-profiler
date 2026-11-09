@@ -31,6 +31,7 @@ import WolframToDesmos from "./wolfram2desmos";
 import BetterNavigation from "./better-navigation";
 import QuakePro from "./quake-pro";
 import Profiler from "./profiler";
+import ShaderInspector from "./shader-inspector";
 import OverrideKeystroke from "../core-plugins/override-keystroke";
 import { DispatchedEvent } from "src/globals/extra-actions";
 import ScrollBeyond from "./scroll-beyond";
@@ -168,6 +169,7 @@ export const keyToPlugin = {
   pasteImage: PasteImage,
   quakePro: QuakePro,
   profiler: Profiler,
+  shaderInspector: ShaderInspector,
 } satisfies Record<string, Plugin<any>>;
 
 export const pluginList = Object.values(keyToPlugin);
@@ -226,6 +228,7 @@ export class TransparentPlugins implements KeyToPluginInstance {
   get pasteImage () { return this.ep["paste-image"]; }
   get quakePro () { return this.ep["quake-pro"]; }
   get profiler () { return this.ep["profiler"]; }
+  get shaderInspector () { return this.ep["shader-inspector"]; }
 }
 
 export type IDToPluginSettings = {

@@ -14,6 +14,7 @@ import textMode from "#plugins/text-mode/text-mode.replacements";
 import insertPanels from "../preload/moduleOverrides/insert-panels.replacements";
 import quakePro from "#plugins/quake-pro/quake-pro.replacements";
 import profiler from "#plugins/profiler/profiler.replacements";
+import shaderInspector from "#plugins/shader-inspector/shader-inspector.replacements";
 
 export default [
   insertPanels,
@@ -32,4 +33,5 @@ export default [
   codeGolf,
   quakePro,
   profiler,
+  shaderInspector,
 ];
