@@ -75,6 +75,7 @@ export interface MathQuillConfig {
   supSubsRequireOperand?: boolean;
   restrictMismatchedBrackets?: boolean | "none";
   typingPercentWritesPercentOf?: boolean;
+  matrices?: boolean;
 }
 
 export interface MqSelection {
