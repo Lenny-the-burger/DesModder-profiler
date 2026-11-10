@@ -1,3 +1,5 @@
+The personal branch has all the plugins
+
 # DesModder
 
 Supercharge your Desmos graph creation and sharing experience with many convenient features:
