@@ -233,50 +233,88 @@ testWithPage("List remeasure", async (driver) => {
   return clean;
 });
 
-testWithPage("Fraction display", async (driver) => {
-  // Setup
-  await disableBevLists(driver);
-  await driver.setPluginSetting("better-evaluation-view", "fractions", true);
+async function expectAproxMatch(
+  driver: Driver,
+  expr: RegExp,
+  expected: number[],
+  error: number = 0.01
+) {
+  const match = expr.exec(await driver.getEvalLatex(false));
+
+  expect(match).not.toBeNull();
+
+  if (!match) return;
+
+  const actual = match.slice(1, 1 + expected.length).map(Number);
+
+  actual.forEach((value, i) => {
+    const percentError = Math.abs((value - expected[i]) / value);
+    expect(percentError).toBeLessThan(error);
+  });
+}
+
+testWithPage("Color models", async (driver) => {
+  await driver.setPluginSetting("better-evaluation-view", "colors", true);
   await driver.focusIndex(0);
 
-  // List of integers
-  await driver.setLatexAndSync("[1,2]+0");
-  await driver.assertSelectorNot(".dcg-icon-fraction");
+  // rgb
+  await driver.setPluginSetting("better-evaluation-view", "colorModel", "rgb");
+  await driver.setLatexAndSync("C=\\operatorname{rgb}\\left(1,2,3\\right)");
+  await driver.expectEval("\\operatorname{rgb}\\left(1,2,3\\right)");
 
-  // List of non-fraction numbers
-  await driver.setLatexAndSync("[1,\\sqrt{2}]+0");
-  await driver.assertSelectorNot(".dcg-icon-fraction");
-
-  // List with fraction
-  await driver.setLatexAndSync("[0.5,2,\\sqrt{2}]+0");
-  await driver.assertSelector(".dcg-icon-fraction");
-
-  // Matrix of integers
+  // hsv
+  await driver.setPluginSetting("better-evaluation-view", "colorModel", "hsv");
   await driver.setLatexAndSync(
-    String.raw`\begin{bmatrix}1&2\\3&4\end{bmatrix}\cdot1`
+    "C=\\operatorname{hsv}\\left(200,0.5,0.5\\right)"
   );
-  await driver.assertSelectorNot(".dcg-icon-fraction");
+  await expectAproxMatch(
+    driver,
+    /^\\operatorname\{hsv\}\\left\((\d+(?:\.\d+)?),(\d+(?:\.\d+)?),(\d+(?:\.\d+)?)\\right\)$/,
+    [200, 0.5, 0.5]
+  );
 
-  // Matrix of non-fraction numbers
-  await driver.setLatexAndSync(
-    String.raw`\begin{bmatrix}1&\sqrt{2}\\3&4\end{bmatrix}\cdot1`
-  );
-  await driver.assertSelectorNot(".dcg-icon-fraction");
+  // hex
+  await driver.setPluginSetting("better-evaluation-view", "colorModel", "hex");
+  await driver.setLatexAndSync("C=\\operatorname{rgb}\\left(109,43,73\\right)");
+  await driver.expectEval("#6D2B49");
 
-  // Matrices with fractions
-  await driver.setLatexAndSync(
-    String.raw`\begin{bmatrix}\sqrt{2}&2\\3&0.5\end{bmatrix}\cdot1`
-  );
-  await driver.assertSelector(".dcg-icon-fraction");
-  await driver.setLatexAndSync(
-    String.raw`\begin{bmatrix}1&\pi\\0.34&9\end{bmatrix}\cdot1`
-  );
-  await driver.assertSelector(".dcg-icon-fraction");
+  // Clean up
+  await driver.clean();
+  return clean;
+});
 
-  // Does not show when plugin disabled
-  await driver.setPluginSetting("better-evaluation-view", "fractions", false);
-  await driver.setLatexAndSync("[0.5,2,\\sqrt{2}]+0");
-  await driver.assertSelectorNot(".dcg-icon-fraction");
+testWithPage("Color models with lists", async (driver) => {
+  await enableBevLists(driver);
+  await driver.setPluginSetting("better-evaluation-view", "colors", true);
+  await driver.setPluginSetting("better-evaluation-view", "colorLists", true);
+  await driver.focusIndex(0);
+
+  // rgb
+  await driver.setPluginSetting("better-evaluation-view", "colorModel", "rgb");
+  await driver.setLatexAndSync(
+    "C=\\left[\\operatorname{rgb}\\left(1,2,3\\right),\\operatorname{rgb}\\left(3,2,1\\right)\\right]"
+  );
+  await driver.expectEval(
+    "\\operatorname{rgb}\\left(\\left[\\left(1,2,3\\right),\\left(3,2,1\\right)\\right]\\right)"
+  );
+
+  // hsv
+  await driver.setPluginSetting("better-evaluation-view", "colorModel", "hsv");
+  await driver.setLatexAndSync(
+    "C=\\left[\\operatorname{hsv}\\left(200,0.5,0.5\\right),\\operatorname{hsv}\\left(123.5,0.4,0.5\\right)\\right]"
+  );
+  await expectAproxMatch(
+    driver,
+    /^\\operatorname\{hsv\}\\left\(\\left\[\\left\((\d+(?:\.\d+)?),(\d+(?:\.\d+)?),(\d+(?:\.\d+)?)\\right\),\\left\((\d+(?:\.\d+)?),(\d+(?:\.\d+)?),(\d+(?:\.\d+)?)\\right\)\\right\]\\right\)$/,
+    [200, 0.5, 0.5, 123.5, 0.4, 0.5]
+  );
+
+  // hex
+  await driver.setPluginSetting("better-evaluation-view", "colorModel", "hex");
+  await driver.setLatexAndSync(
+    "C=\\left[\\operatorname{rgb}\\left(109,43,73\\right),\\operatorname{rgb}\\left(255,14,76\\right)\\right]"
+  );
+  await driver.expectEval("\\left[#6D2B49,#FF0E4C\\right]");
 
   // Clean up
   await driver.clean();

@@ -1,6 +1,7 @@
 import { ConfigItem } from "#plugins/index.ts";
 
 export type ListOptions = "old" | "new" | "length";
+export type ColorModelOptions = "rgb" | "hsv" | "hex";
 
 export const configList: ConfigItem[] = [
   {
@@ -30,10 +31,15 @@ export const configList: ConfigItem[] = [
     shouldShow: (current: Config) => current.lists === "old" && current.colors,
   },
   {
-    key: "fractions",
-    type: "boolean",
-    default: true,
-    shouldShow: (current: Config) => current.lists === "new",
+    key: "colorModel",
+    type: "segmented-options",
+    options: [
+      { name: "rgb", i18nKey: "better-evaluation-view-opt-colorModel-rgb" },
+      { name: "hsv", i18nKey: "better-evaluation-view-opt-colorModel-hsv" },
+      { name: "hex", i18nKey: "better-evaluation-view-opt-colorModel-hex" },
+    ],
+    default: "rgb",
+    shouldShow: (current: Config) => current.colors,
   },
 ];
 
@@ -42,5 +48,5 @@ export interface Config {
   lists: ListOptions;
   colors: boolean;
   colorLists: boolean;
-  fractions: boolean;
+  colorModel: ColorModelOptions;
 }

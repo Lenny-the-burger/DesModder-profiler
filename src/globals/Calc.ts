@@ -4,6 +4,7 @@ import { MathQuillConfig, MathQuillField } from "#components";
 import { Matrix3 } from "./matrix3";
 import type { DispatchedEvent } from "./extra-actions";
 import { VcFocusedMq } from "../plugins/video-creator/index.ts";
+import { Config as QuakeProConfig } from "../plugins/quake-pro/config.ts";
 
 export type { DispatchedEvent };
 
@@ -24,6 +25,11 @@ export type FocusLocation =
       kind: "dummy-mq";
     }
   | { type: "search-expressions" }
+  | {
+      type: "dsm-focus";
+      plugin: "color-input";
+      kind: "color-input-field";
+    }
   | {
       /**
        * Special type to prevent exhaustive switches on `location.type`
@@ -161,9 +167,16 @@ export type VanillaDispatchedEvent =
       toast: Toast;
     }
   | { type: "set-folder-collapsed"; id: string; isCollapsed: boolean }
-  | { type: "set-item-colorLatex"; id: string; colorLatex: string }
+  | { type: "set-item-colorlatex"; id: string; colorLatex: string }
   | { type: "rename-identifier-in-item"; id: string }
-  | { type: "set-note-text"; id: string; text: string };
+  | { type: "set-note-text"; id: string; text: string }
+  | {
+      type: "toggle-item-settings-menu";
+      menu: {
+        type: string;
+        id: string;
+      };
+    };
 
 /**
  * Evaluator change: a change set associated with a single id, passed back from
@@ -237,6 +250,17 @@ export interface Viewport {
 
 type ViewportClass = Viewport & { __isViewportClass: unknown };
 
+export interface WorkerData3d {
+  settings: {
+    perspectiveDistortion: number;
+    // ... a bunch omitted
+    quakePro?: QuakeProConfig & {
+      zoomPercentage: number;
+      scalarMultiplier: number;
+    };
+  };
+}
+
 export interface Grapher3d {
   controls: {
     worldRotation3D: Matrix3;
@@ -256,6 +280,7 @@ export interface Grapher3d {
     duration: number;
   };
   redrawAllLayers: () => void;
+  getWorkerData: () => WorkerData3d;
 }
 
 export type Scale = "linear" | "logarithmic";
@@ -342,6 +367,11 @@ interface CalcPrivate {
       }[];
       __itemIdToModel: Record<string, ItemModel>;
 
+      ticker: {
+        handlerLatex: string;
+        minStepLatex: string;
+      };
+
       drawLayers: { layer: number; drawOrder: string[]; drawSet: string[] }[];
     };
     _addItemToEndFromAPI: (item: ItemModel) => void;
@@ -397,6 +427,10 @@ interface CalcPrivate {
     };
     destroy: () => void;
     dsmHooks: DesModderHooks;
+    clipboardHandlers: {
+      /** Returns true to suppress the regular paste handler. */
+      overridePaste: (evt?: ClipboardEvent) => boolean;
+    };
   };
   /// / public
 

@@ -60,7 +60,7 @@ export default class BetterEvaluationView extends PluginController<Config> {
     if (value.valueType === ValueType.RGBColor) {
       // A non-list color
       return settings.colors
-        ? (swatch) => ColorEvaluation(value, swatch)
+        ? (swatch) => ColorEvaluation(value, settings.colorModel, swatch)
         : undefined;
     }
 
@@ -94,7 +94,7 @@ export default class BetterEvaluationView extends PluginController<Config> {
         return settings.colors &&
           settings.lists === "old" &&
           settings.colorLists
-          ? (swatch) => ColorEvaluation(value, swatch)
+          ? (swatch) => ColorEvaluation(value, settings.colorModel, swatch)
           : undefined;
       default:
         value.valueType satisfies Exclude<
@@ -121,22 +121,5 @@ export default class BetterEvaluationView extends PluginController<Config> {
     const model = this.controller.getItemModel(this.props.id());
     if (model?.type !== "expression") return undefined;
     return model.formula?.typed_constant_value as EvaluableConstantValue;
-  }
-
-  canDisplayEvaluationForItemAsFraction(
-    o: TypedConstantValue | undefined,
-    canDisplayAsFraction: (c: number) => boolean
-  ) {
-    if (!this.settings.fractions || this.settings.lists !== "new" || o == null)
-      return false;
-
-    switch (o.valueType) {
-      case ValueType.ListOfNumber:
-        return o.value.some((e) => canDisplayAsFraction(e));
-      case ValueType.Matrix:
-        return o.value.some((row) => row.some((e) => canDisplayAsFraction(e)));
-      default:
-        return false;
-    }
   }
 }

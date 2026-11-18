@@ -2,7 +2,7 @@
   "name": "DesModder for Desmos",
   "description": "Supercharge your Desmos graph creation and sharing experience with many convenient features",
   "manifest_version": 2,
-  "version": "0.15.17",
+  "version": "0.16.0",
   "icons": {
     "48": "icon48.png",
     "128": "icon128.png"
@@ -33,7 +33,6 @@
   "web_accessible_resources": ["script.js", "preloadScript.js"],
   "permissions": [
     "https://*.desmos.com/*",
-    "https://wakatime.com/api/v1/users/current/heartbeats",
     "storage",
     "webRequest",
     "webRequestBlocking"
